@@ -7,7 +7,7 @@ use std::fs::File;
 use std::path::Path;
 use std::time::Duration;
 use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
-use symphonia::core::errors::Error as SymError;
+use symphonia::core::errors::{Error as SymError, SeekErrorKind};
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo, TrackType};
 use symphonia::core::io::{MediaSource, MediaSourceStream};
@@ -32,6 +32,8 @@ pub struct Decoder {
     trim_left: Option<u64>,
     /// MP4 gapless info, kept for seeking.
     gapless: Option<Gapless>,
+    /// A seek landed at or past the end: report end of stream until the next seek.
+    at_end: bool,
     bitrate_bytes: u64,
     bitrate_frames: u64,
     pending_title: Option<String>,
@@ -115,6 +117,7 @@ impl Decoder {
             trim_skip: 0,
             trim_left: None,
             gapless: None,
+            at_end: false,
             bitrate_bytes: 0,
             bitrate_frames: 0,
             pending_title: None,
@@ -154,8 +157,8 @@ impl Decoder {
     /// Returns `Ok(false)` at end of stream. Corrupt packets are skipped.
     pub fn decode_next(&mut self, out: &mut Vec<f32>) -> Result<bool, EngineError> {
         loop {
-            if self.trim_left == Some(0) {
-                // The rest is encoder padding.
+            if self.at_end || self.trim_left == Some(0) {
+                // Seeked past the end, or the rest is encoder padding.
                 return Ok(false);
             }
             let packet = match self.format.next_packet() {
@@ -212,18 +215,30 @@ impl Decoder {
             .gapless
             .map(|g| Duration::from_secs_f64(g.delay as f64 / rate))
             .unwrap_or_default();
+        self.at_end = false;
+        if let Some(duration) = self.info.duration
+            && to >= duration
+        {
+            self.at_end = true;
+            return Ok(duration);
+        }
         let target = to + delay;
         let time = Time::try_from_secs_f64(target.as_secs_f64()).unwrap_or(Time::ZERO);
-        let seeked = self
-            .format
-            .seek(
-                SeekMode::Accurate,
-                SeekTo::Time {
-                    time,
-                    track_id: Some(self.track_id),
-                },
-            )
-            .map_err(|e| EngineError::Decode(format!("seek failed: {e}")))?;
+        let seeked = match self.format.seek(
+            SeekMode::Accurate,
+            SeekTo::Time {
+                time,
+                track_id: Some(self.track_id),
+            },
+        ) {
+            Ok(seeked) => seeked,
+            // Unknown or overstated duration: past the end is still just the end.
+            Err(SymError::SeekError(SeekErrorKind::OutOfRange)) => {
+                self.at_end = true;
+                return Ok(self.info.duration.unwrap_or(to));
+            }
+            Err(e) => return Err(EngineError::Decode(format!("seek failed: {e}"))),
+        };
         self.decoder.reset();
         self.skip_frames = 0;
         let mut required = target;

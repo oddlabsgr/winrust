@@ -126,3 +126,53 @@ fn mp3_halves_play_back_gaplessly() {
         "join step {at_join} vs normal {elsewhere}"
     );
 }
+
+#[test]
+fn seeking_past_the_end_ends_every_format_cleanly() {
+    // Review I5: symphonia returns an out-of-range error here; the decoder must instead
+    // report the end, so the engine ends the track rather than showing an error.
+    for name in [
+        "tone.mp3",
+        "tone.flac",
+        "tone.ogg",
+        "tone.m4a",
+        "tone-alac.m4a",
+    ] {
+        let mut dec = Decoder::open_file(&fixture(name)).unwrap();
+        let duration = dec.info().duration.unwrap();
+        let pos = dec
+            .seek(Duration::from_secs(600))
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(pos, duration, "{name}");
+        let mut out = Vec::new();
+        assert!(
+            !dec.decode_next(&mut out).unwrap(),
+            "{name}: still decoding"
+        );
+        assert!(out.is_empty(), "{name}");
+        // Seeking back afterwards works again.
+        dec.seek(Duration::from_millis(500)).unwrap();
+        assert!(
+            dec.decode_next(&mut out).unwrap(),
+            "{name}: dead after seeking back"
+        );
+    }
+}
+
+#[test]
+fn engine_ends_track_when_seeking_past_the_end() {
+    let engine = Engine::spawn(Box::new(CaptureSink::realtime(44_100))).unwrap();
+    let h = engine.handle();
+    h.send(Command::Load(Source::File(fixture("tone.mp3"))));
+    wait_for(engine.events(), Duration::from_secs(10), |e| {
+        matches!(e, EngineEvent::TrackStarted { .. })
+    });
+    h.send(Command::Seek(Duration::from_secs(600)));
+    let events = wait_for(engine.events(), Duration::from_secs(10), |e| {
+        matches!(e, EngineEvent::TrackEnded)
+    });
+    assert!(
+        !events.iter().any(|e| matches!(e, EngineEvent::Error(_))),
+        "{events:#?}"
+    );
+}
