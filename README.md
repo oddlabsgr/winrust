@@ -2,8 +2,9 @@
 
 A cross-platform clone of the classic Winamp 2.x music player, written in Rust.
 
-> **Status:** early development (milestone M1). The audio engine works and can be driven from
-> the terminal with `winrust-cli`. The skinned player window is not built yet.
+> **Status:** early development (milestone M2). The audio engine works and can be driven from
+> the terminal with `winrust-cli`, and the skin engine loads classic `.wsz` skins. The skinned
+> player window is not built yet.
 
 Winrust aims to reproduce Winamp 2.x's main window, equalizer and playlist editor, and to
 render classic `.wsz` skins pixel for pixel on Windows, macOS and Linux. Scope and roadmap:
@@ -38,6 +39,22 @@ While playing, type a key and press Enter: `p` pause/resume, `s` stop, `n` next,
 Supported: MP3, FLAC, Ogg Vorbis, WAV, AAC (ADTS and MP4/M4A, AAC-LC), ALAC, and
 SHOUTcast/Icecast streams over HTTP or HTTPS with stream titles. HE-AAC (AAC+) streams play
 their AAC-LC core only, at reduced quality.
+
+## Checking skins
+
+The skin engine can lay out every sprite of a skin on one image, for comparing against
+[Webamp](https://webamp.org):
+
+```sh
+cargo run -p winrust-skin --example skin-tool -- contact path/to/skin.wsz sheet.png
+```
+
+To load a whole folder of skins and write a contact sheet for each (no skins are committed;
+they belong to their authors):
+
+```sh
+WINRUST_SKINS_DIR=path/to/skins cargo test -p winrust-skin --test real_skins -- --ignored --nocapture
+```
 
 ## License
 
