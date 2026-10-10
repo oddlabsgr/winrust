@@ -1,5 +1,6 @@
 //! Winrust audio engine: decoding, streaming, DSP and output.
 
+pub mod decoder;
 pub mod dsp;
 pub mod eq;
 pub mod resample;
