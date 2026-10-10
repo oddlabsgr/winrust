@@ -1,8 +1,12 @@
 //! Decoding of every supported format, using fixtures from `cargo xtask gen-fixtures`.
 
+mod common;
+
+use common::*;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use winrust_audio::decoder::Decoder;
+use winrust_audio::{CaptureSink, Command, Engine, EngineEvent, Source};
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -91,4 +95,34 @@ fn aac_seek_lands_on_audio_time() {
     while dec.decode_next(&mut out).unwrap() {}
     let frames = (out.len() / 2) as i64;
     assert!((frames - 22_050).abs() <= 2, "{frames} frames after seek");
+}
+
+#[test]
+fn mp3_halves_play_back_gaplessly() {
+    let sink = CaptureSink::new(44_100);
+    let captured = sink.captured();
+    let engine = Engine::spawn(Box::new(sink)).unwrap();
+    let h = engine.handle();
+    h.send(Command::Load(Source::File(fixture("half1.mp3"))));
+    h.send(Command::QueueNext(Source::File(fixture("half2.mp3"))));
+    wait_for(engine.events(), Duration::from_secs(10), |e| {
+        matches!(e, EngineEvent::TrackEnded)
+    });
+
+    let signal = left(&captured.lock().unwrap());
+    // Encoder delay and padding trimmed: two seconds, give or take a few frames.
+    assert!(
+        (signal.len() as i64 - 88_200).abs() < 100,
+        "{} frames",
+        signal.len()
+    );
+    // No click at the join: the biggest sample-to-sample step near the boundary is no
+    // bigger than anywhere else in the signal.
+    let steps: Vec<f32> = signal.windows(2).map(|w| (w[1] - w[0]).abs()).collect();
+    let elsewhere = steps[1_000..40_000].iter().fold(0f32, |m, s| m.max(*s));
+    let at_join = steps[43_600..44_600].iter().fold(0f32, |m, s| m.max(*s));
+    assert!(
+        at_join <= elsewhere * 1.5 + 0.002,
+        "join step {at_join} vs normal {elsewhere}"
+    );
 }
