@@ -1,0 +1,38 @@
+[package]
+name = "winrust-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+crossbeam-channel = "0.5.17"
+libfuzzer-sys = "0.4.13"
+winrust-audio = { path = "../crates/audio" }
+winrust-skin = { path = "../crates/skin" }
+
+# Not part of the main workspace: cargo-fuzz needs nightly.
+[workspace]
+
+[[bin]]
+name = "bmp"
+path = "fuzz_targets/bmp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "skin_archive"
+path = "fuzz_targets/skin_archive.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "icy"
+path = "fuzz_targets/icy.rs"
+test = false
+doc = false
+bench = false
