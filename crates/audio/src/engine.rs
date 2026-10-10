@@ -236,6 +236,10 @@ impl Worker {
         let _ = self.events.send(event);
     }
 
+    fn emit_error(&self, source: Option<Source>, error: EngineError) {
+        self.emit(EngineEvent::Error { source, error });
+    }
+
     fn frames(&self, d: Duration) -> usize {
         let f = (d.as_secs_f64() * f64::from(self.device_rate)) as usize;
         f.min(RING_FRAMES * 3 / 4)
@@ -295,7 +299,7 @@ impl Worker {
                 self.stop_playback();
                 match self.sink.set_device(name) {
                     Ok(rate) => self.apply_rate(rate),
-                    Err(e) => self.emit(EngineEvent::Error(e)),
+                    Err(e) => self.emit_error(None, e),
                 }
                 self.resume(resume);
             }
@@ -325,7 +329,7 @@ impl Worker {
             }
             // A newer Load/Stop interrupted this one: not an error worth showing.
             Err(_) if self.epoch.load(Ordering::Acquire) != epoch => {}
-            Err(e) => self.emit(EngineEvent::Error(e)),
+            Err(e) => self.emit_error(Some(source), e),
         }
     }
 
@@ -349,7 +353,7 @@ impl Worker {
                     self.last_source = Some(source);
                     self.active = Some(active);
                 }
-                Err(e) => self.emit(EngineEvent::Error(e)),
+                Err(e) => self.emit_error(Some(source), e),
             }
         } else {
             self.queued = Some(source);
@@ -402,7 +406,13 @@ impl Worker {
                 self.shared.producer_done.store(false, Ordering::Release);
                 self.emit(EngineEvent::Position(actual));
             }
-            Err(e) => self.emit(EngineEvent::Error(e)),
+            Err(e) => {
+                let source = self
+                    .active
+                    .as_ref()
+                    .map(|a| a.decoder.info().source.clone());
+                self.emit_error(source, e);
+            }
         }
     }
 
@@ -479,7 +489,11 @@ impl Worker {
                 }
                 Ok(false) => self.end_of_track(),
                 Err(e) => {
-                    self.emit(EngineEvent::Error(e));
+                    let source = self
+                        .active
+                        .as_ref()
+                        .map(|a| a.decoder.info().source.clone());
+                    self.emit_error(source, e);
                     self.end_of_track();
                 }
             }
@@ -513,7 +527,7 @@ impl Worker {
                     self.active = Some(active);
                     return;
                 }
-                Err(e) => self.emit(EngineEvent::Error(e)),
+                Err(e) => self.emit_error(Some(next), e),
             }
         }
         finished.resampler.flush(&mut self.resampled);
@@ -573,7 +587,7 @@ impl Worker {
                     self.apply_rate(rate);
                     self.resume(resume);
                 }
-                SinkEvent::Error(msg) => self.emit(EngineEvent::Error(EngineError::Device(msg))),
+                SinkEvent::Error(msg) => self.emit_error(None, EngineError::Device(msg)),
             }
         }
     }

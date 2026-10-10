@@ -177,9 +177,9 @@ fn play(args: PlayArgs) -> Result<(), String> {
                         println!("\n  [{s:?}]");
                         Next::Nothing
                     }
-                    EngineEvent::Error(e) => {
-                        println!("\n  ✖ {e}");
-                        queue.on_error()
+                    EngineEvent::Error { source, error } => {
+                        println!("\n  ✖ {error}");
+                        queue.on_error(|i| source.as_ref() == Some(&sources[i]))
                     }
                     EngineEvent::TrackEnded => queue.on_ended(),
                 };

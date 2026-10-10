@@ -102,7 +102,13 @@ pub enum EngineEvent {
     StreamTitle(String),
     /// The last queued track finished; the engine is now stopped.
     TrackEnded,
-    Error(EngineError),
+    /// Something failed. `source` names the track it concerns (unreadable file, queued
+    /// track that failed to open, decode error) so a player can skip exactly that entry;
+    /// `None` for device problems.
+    Error {
+        source: Option<Source>,
+        error: EngineError,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]

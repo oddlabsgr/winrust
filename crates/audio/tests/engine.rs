@@ -223,13 +223,17 @@ fn unreadable_file_reports_error_and_stays_stopped() {
     std::fs::write(&path, b"not audio at all").unwrap();
 
     let (engine, _) = engine(CaptureSink::new(RATE));
-    engine.handle().send(Command::Load(Source::File(path)));
+    engine
+        .handle()
+        .send(Command::Load(Source::File(path.clone())));
     let events = wait_for(engine.events(), LONG, |e| {
-        matches!(e, EngineEvent::Error(_))
+        matches!(e, EngineEvent::Error { .. })
     });
+    // The error names the file, so a player can skip exactly that entry (review I7).
     assert!(matches!(
         events.last(),
-        Some(EngineEvent::Error(EngineError::Unsupported(_)))
+        Some(EngineEvent::Error { source: Some(s), error: EngineError::Unsupported(_) })
+            if *s == Source::File(path.clone())
     ));
     std::thread::sleep(Duration::from_millis(50));
     let later: Vec<_> = engine.events().try_iter().collect();
@@ -250,14 +254,14 @@ fn bad_queued_track_still_ends_current_one() {
     let (engine, _) = engine(CaptureSink::new(RATE));
     let h = engine.handle();
     h.send(Command::Load(Source::File(path)));
-    h.send(Command::QueueNext(Source::File(
-        dir.path().join("missing.flac"),
-    )));
+    let missing = Source::File(dir.path().join("missing.flac"));
+    h.send(Command::QueueNext(missing.clone()));
     let events = wait_for(engine.events(), LONG, is_ended);
     assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, EngineEvent::Error(EngineError::Open { .. }))),
+        events.iter().any(|e| matches!(
+            e,
+            EngineEvent::Error { source: Some(s), error: EngineError::Open { .. } } if *s == missing
+        )),
         "{events:#?}"
     );
 }

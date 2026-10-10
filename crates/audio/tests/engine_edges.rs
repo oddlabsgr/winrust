@@ -70,7 +70,7 @@ fn device_rate_change_resumes_same_track_near_same_position() {
         "{at:?} -> {resumed:?}"
     );
     assert!(
-        !after.iter().any(|e| matches!(e, EngineEvent::Error(_))),
+        !after.iter().any(|e| matches!(e, EngineEvent::Error { .. })),
         "{after:#?}"
     );
 }
@@ -197,7 +197,13 @@ fn zero_sample_rate_file_is_rejected_and_engine_survives() {
     let engine = Engine::spawn(Box::new(CaptureSink::new(RATE))).unwrap();
     engine.handle().send(Command::Load(Source::File(bad)));
     wait_for(engine.events(), LONG, |e| {
-        matches!(e, EngineEvent::Error(EngineError::Unsupported(_)))
+        matches!(
+            e,
+            EngineEvent::Error {
+                error: EngineError::Unsupported(_),
+                ..
+            }
+        )
     });
     engine.handle().send(Command::Load(Source::File(good)));
     wait_for(engine.events(), LONG, |e| {
@@ -339,7 +345,7 @@ content-type: audio/wav
     assert!(
         !events
             .iter()
-            .any(|e| matches!(e, EngineEvent::TrackEnded | EngineEvent::Error(_))),
+            .any(|e| matches!(e, EngineEvent::TrackEnded | EngineEvent::Error { .. })),
         "{events:#?}"
     );
 }

@@ -172,7 +172,9 @@ fn engine_ends_track_when_seeking_past_the_end() {
         matches!(e, EngineEvent::TrackEnded)
     });
     assert!(
-        !events.iter().any(|e| matches!(e, EngineEvent::Error(_))),
+        !events
+            .iter()
+            .any(|e| matches!(e, EngineEvent::Error { .. })),
         "{events:#?}"
     );
 }

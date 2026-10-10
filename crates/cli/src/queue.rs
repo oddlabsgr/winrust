@@ -13,6 +13,8 @@ pub struct Queue {
     len: usize,
     current: Option<usize>,
     queued: Option<usize>,
+    /// The engine reported that the queued track could not be opened.
+    queued_failed: bool,
     awaiting_start: bool,
 }
 
@@ -22,6 +24,7 @@ impl Queue {
             len,
             current: None,
             queued: None,
+            queued_failed: false,
             awaiting_start: false,
         }
     }
@@ -36,6 +39,7 @@ impl Queue {
         }
         self.current = Some(index);
         self.queued = None;
+        self.queued_failed = false;
         self.awaiting_start = true;
         Next::Load(index)
     }
@@ -55,10 +59,15 @@ impl Queue {
         }
     }
 
-    /// The engine reported an error.
-    pub fn on_error(&mut self) -> Next {
-        match (self.awaiting_start, self.current) {
-            (true, Some(i)) => self.load(i + 1),
+    /// The engine reported an error; `is_source(i)` says whether entry `i` is the track it
+    /// names.
+    pub fn on_error(&mut self, is_source: impl Fn(usize) -> bool) -> Next {
+        if self.queued.is_some_and(&is_source) {
+            self.queued_failed = true;
+            return Next::Nothing;
+        }
+        match self.current {
+            Some(i) if self.awaiting_start && is_source(i) => self.load(i + 1),
             _ => Next::Nothing,
         }
     }
@@ -66,8 +75,9 @@ impl Queue {
     /// Playback stopped at the end of the last queued track.
     pub fn on_ended(&mut self) -> Next {
         match self.queued.take() {
-            // The queued track never started, so it failed to open: skip past it.
-            Some(q) => self.load(q + 1),
+            Some(q) if self.queued_failed => self.load(q + 1),
+            // The engine finished before it saw the queued track: play it now.
+            Some(q) => self.load(q),
             None => Next::Quit,
         }
     }
@@ -104,7 +114,7 @@ mod tests {
     fn unreadable_first_track_is_skipped() {
         let mut q = Queue::new(2);
         q.start();
-        assert_eq!(q.on_error(), Next::Load(1));
+        assert_eq!(q.on_error(|i| i == 0), Next::Load(1));
         assert_eq!(q.on_started(false), Next::Nothing);
     }
 
@@ -113,11 +123,7 @@ mod tests {
         let mut q = Queue::new(3);
         q.start();
         assert_eq!(q.on_started(false), Next::Enqueue(1));
-        assert_eq!(
-            q.on_error(),
-            Next::Nothing,
-            "error belongs to the queued track"
-        );
+        assert_eq!(q.on_error(|i| i == 1), Next::Nothing, "queued track failed");
         assert_eq!(q.on_ended(), Next::Load(2));
     }
 
@@ -127,5 +133,23 @@ mod tests {
         q.start();
         assert_eq!(q.skip(), Next::Load(1));
         assert_eq!(q.skip(), Next::Quit);
+    }
+
+    #[test]
+    fn track_that_ends_before_the_queue_arrives_does_not_skip_the_next() {
+        // Review I7: a header-only file starts and ends at once, before the engine sees
+        // the QueueNext; the next track never started but did not fail either.
+        let mut q = Queue::new(3);
+        q.start();
+        assert_eq!(q.on_started(false), Next::Enqueue(1));
+        assert_eq!(q.on_ended(), Next::Load(1));
+    }
+
+    #[test]
+    fn unattributed_errors_change_nothing() {
+        let mut q = Queue::new(2);
+        q.start();
+        assert_eq!(q.on_error(|_| false), Next::Nothing);
+        assert_eq!(q.on_started(false), Next::Enqueue(1));
     }
 }
