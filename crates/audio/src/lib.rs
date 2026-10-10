@@ -2,6 +2,7 @@
 
 pub mod dsp;
 pub mod eq;
+pub mod resample;
 pub mod types;
 pub mod volume;
 
