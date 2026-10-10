@@ -329,13 +329,19 @@ content-type: audio/wav
         sock.write_all(&out).unwrap();
         std::thread::sleep(Duration::from_secs(20));
     });
-    let engine = Engine::spawn(Box::new(CaptureSink::new(RATE))).unwrap();
+    let sink = CaptureSink::new(RATE);
+    let captured = sink.captured();
+    let engine = Engine::spawn(Box::new(sink)).unwrap();
     engine
         .handle()
         .send(Command::Load(Source::Url(format!("http://{addr}/"))));
-    wait_for(engine.events(), LONG, |e| {
-        matches!(e, EngineEvent::State(PlaybackState::Playing))
-    });
+    // Wait for audio rather than State(Playing): once the read stalls, the worker blocks in
+    // it and may never get to report Playing (seen on a slow macOS runner).
+    let deadline = Instant::now() + LONG;
+    while captured.lock().unwrap().is_empty() {
+        assert!(Instant::now() < deadline, "playback never started");
+        std::thread::sleep(Duration::from_millis(10));
+    }
     // The fast capture sink drains 2.5 s of audio in well under 500 ms: now underrun.
     std::thread::sleep(Duration::from_millis(500));
     engine.handle().send(Command::Stop);
