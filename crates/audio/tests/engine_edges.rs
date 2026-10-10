@@ -299,3 +299,47 @@ fn load_during_output_stall_still_plays_whole_track() {
         "every frame played"
     );
 }
+
+#[test]
+fn stop_after_underrun_on_stalled_stream_does_not_end_track() {
+    // Review I1: cancelling a stalled read made the pipe report EOF, which the engine took
+    // as a natural end; after an underrun that fired TrackEnded (or started the queued
+    // track) before Stop was handled, so players skipped ahead.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        let (mut sock, _) = listener.accept().unwrap();
+        let mut req = [0u8; 1024];
+        let _ = sock.read(&mut req);
+        let mut out = b"HTTP/1.0 200 OK
+content-type: audio/wav
+
+"
+        .to_vec();
+        let wav = wav_bytes(RATE, &sine_i16(RATE, 0, 10 * RATE as usize));
+        // Header plus 96 whole 1152-frame packets (~2.5 s): passes the 2 s prebuffer and
+        // stalls exactly on a packet boundary, so every byte sent gets played.
+        out.extend(&wav[..44 + 96 * 1152 * 4]);
+        sock.write_all(&out).unwrap();
+        std::thread::sleep(Duration::from_secs(20));
+    });
+    let engine = Engine::spawn(Box::new(CaptureSink::new(RATE))).unwrap();
+    engine
+        .handle()
+        .send(Command::Load(Source::Url(format!("http://{addr}/"))));
+    wait_for(engine.events(), LONG, |e| {
+        matches!(e, EngineEvent::State(PlaybackState::Playing))
+    });
+    // The fast capture sink drains 2.5 s of audio in well under 500 ms: now underrun.
+    std::thread::sleep(Duration::from_millis(500));
+    engine.handle().send(Command::Stop);
+    let events = wait_for(engine.events(), LONG, |e| {
+        matches!(e, EngineEvent::State(PlaybackState::Stopped))
+    });
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, EngineEvent::TrackEnded | EngineEvent::Error(_))),
+        "{events:#?}"
+    );
+}

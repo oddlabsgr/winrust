@@ -126,6 +126,8 @@ struct Active {
     source_rate: u32,
     is_stream: bool,
     titles: Option<Receiver<String>>,
+    /// Streams only: fires when a Load/Stop/SetDevice interrupts a blocked read.
+    cancel: Option<Cancel>,
 }
 
 struct Worker {
@@ -455,6 +457,13 @@ impl Worker {
                 }
                 other => other,
             };
+            let cancelled = active.cancel.as_ref().is_some_and(Cancel::is_cancelled);
+            if cancelled && !matches!(step, Ok(true)) {
+                // A Load/Stop/SetDevice cut a blocked read short: the stream did not end, so
+                // no TrackEnded, no Error, no queued track. The pending command cleans up.
+                self.active = None;
+                return;
+            }
             match step {
                 Ok(true) => {
                     let active = self.active.as_mut().expect("checked above");
@@ -601,10 +610,11 @@ fn open_source(
     epoch: Arc<AtomicU64>,
     device_rate: u32,
 ) -> Result<Active, EngineError> {
-    let (decoder, is_stream, titles) = match source {
-        Source::File(path) => (Decoder::open_file(path)?, false, None),
+    let (decoder, is_stream, titles, cancel) = match source {
+        Source::File(path) => (Decoder::open_file(path)?, false, None, None),
         Source::Url(url) => {
-            let s = stream::open(url, Cancel::new(epoch))?;
+            let cancel = Cancel::new(epoch);
+            let s = stream::open(url, cancel.clone())?;
             let mut hint = Hint::new();
             if let Some(mime) = &s.content_type {
                 hint.mime_type(mime);
@@ -618,7 +628,7 @@ fn open_source(
                 &hint,
             )?;
             decoder.set_kbps(s.bitrate);
-            (decoder, true, Some(s.titles))
+            (decoder, true, Some(s.titles), Some(cancel))
         }
     };
     let source_rate = decoder.sample_rate();
@@ -628,6 +638,7 @@ fn open_source(
         source_rate,
         is_stream,
         titles,
+        cancel,
     })
 }
 
