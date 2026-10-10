@@ -30,7 +30,6 @@ const STREAM_START: Duration = Duration::from_secs(2);
 const STREAM_FILL: Duration = Duration::from_secs(4);
 const IDLE_TICK: Duration = Duration::from_millis(10);
 const POSITION_EVERY: Duration = Duration::from_millis(100);
-const FLUSH_TIMEOUT: Duration = Duration::from_millis(500);
 /// Packets decoded per loop turn before checking commands again.
 const PACKETS_PER_TURN: usize = 16;
 
@@ -144,8 +143,12 @@ struct Worker {
     queued: Option<Source>,
     last_source: Option<Source>,
     timeline: Timeline,
-    /// Device frame index the next pushed frame will have.
+    /// Ring position of the next pushed frame (frames ever pushed). Compared with
+    /// `Shared::frames_played` to place tracks and compute positions.
     pushed: u64,
+    /// Flush request the callback has not acknowledged yet. Nothing is pushed until it
+    /// does, so ring positions stay exact even when the output stalls.
+    flush_pending: Option<u64>,
     /// Processed stereo samples not yet in the ring.
     pending: Vec<f32>,
     decoded: Vec<f32>,
@@ -182,6 +185,7 @@ impl Worker {
             last_source: None,
             timeline: Timeline::new(device_rate),
             pushed: 0,
+            flush_pending: None,
             pending: Vec::new(),
             decoded: Vec::new(),
             resampled: Vec::new(),
@@ -233,8 +237,14 @@ impl Worker {
     }
 
     fn wants_work(&self) -> bool {
-        (self.active.is_some() && self.ring_frames() < self.fill_target)
-            || (!self.pending.is_empty() && self.producer.slots() >= 2)
+        self.flush_settled()
+            && ((self.active.is_some() && self.ring_frames() < self.fill_target)
+                || (!self.pending.is_empty() && self.producer.slots() >= 2))
+    }
+
+    fn flush_settled(&self) -> bool {
+        self.flush_pending
+            .is_none_or(|request| self.shared.flush_done.load(Ordering::Acquire) >= request)
     }
 
     /// Returns false on shutdown.
@@ -397,20 +407,19 @@ impl Worker {
         self.shared.buffering.store(false, Ordering::Release);
     }
 
-    /// Empties the ring: the callback drains it and acknowledges.
+    /// Asks the callback to empty the ring. Never blocks: pushing resumes once the callback
+    /// acknowledges, at which point everything pushed so far counts as consumed.
     fn flush(&mut self) {
         self.pending.clear();
         let request = self.shared.flush_requested.fetch_add(1, Ordering::AcqRel) + 1;
-        let deadline = Instant::now() + FLUSH_TIMEOUT;
-        while self.shared.flush_done.load(Ordering::Acquire) < request && Instant::now() < deadline
-        {
-            thread::sleep(Duration::from_millis(1));
-        }
-        self.pushed = self.shared.frames_played.load(Ordering::Acquire);
+        self.flush_pending = Some(request);
     }
 
     /// Moves pending samples into the ring. Returns true when nothing is left pending.
     fn push_pending(&mut self) -> bool {
+        if !self.flush_settled() {
+            return false;
+        }
         let n = self.producer.slots().min(self.pending.len()) & !1;
         if n > 0 && self.producer.push_entire_slice(&self.pending[..n]).is_ok() {
             self.pending.drain(..n);

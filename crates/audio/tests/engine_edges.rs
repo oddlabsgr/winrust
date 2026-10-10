@@ -235,3 +235,67 @@ fn late_queue_next_plays_the_next_track_fully() {
         .count();
     assert!(positions >= 2, "b ended without playing: {rest:#?}");
 }
+
+/// Output that stops pulling audio while `hold` is set (e.g. a USB DAC unplugged with no
+/// fallback device). Records real frames only.
+struct StallingSink {
+    hold: Arc<AtomicBool>,
+    captured: Arc<std::sync::Mutex<Vec<f32>>>,
+    stop: Arc<AtomicBool>,
+}
+
+impl AudioSink for StallingSink {
+    fn start(&mut self, renderer: SharedRenderer) -> Result<u32, EngineError> {
+        let (hold, captured, stop) = (self.hold.clone(), self.captured.clone(), self.stop.clone());
+        std::thread::spawn(move || {
+            let mut buf = [0.0f32; 1024];
+            while !stop.load(Ordering::Relaxed) {
+                if !hold.load(Ordering::Relaxed) {
+                    let n = renderer.lock().unwrap().render(&mut buf, 2);
+                    captured.lock().unwrap().extend_from_slice(&buf[..n * 2]);
+                }
+                std::thread::sleep(Duration::from_micros(500));
+            }
+        });
+        Ok(RATE)
+    }
+    fn set_device(&mut self, _: Option<String>) -> Result<u32, EngineError> {
+        Ok(RATE)
+    }
+    fn poll(&mut self) -> Option<SinkEvent> {
+        None
+    }
+    fn stop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+#[test]
+fn load_during_output_stall_still_plays_whole_track() {
+    // Review I6: a flush the output could not acknowledge in time used to discard the new
+    // track's audio later while still counting it as queued, so the track never ended.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.wav");
+    write_wav(&path, RATE, 2, &sine_i16(RATE, 0, RATE as usize));
+    let hold = Arc::new(AtomicBool::new(true));
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = StallingSink {
+        hold: hold.clone(),
+        captured: captured.clone(),
+        stop: Arc::default(),
+    };
+    let engine = Engine::spawn(Box::new(sink)).unwrap();
+    let asked = Instant::now();
+    engine.handle().send(Command::Load(Source::File(path)));
+    std::thread::sleep(Duration::from_millis(800));
+    hold.store(false, Ordering::Relaxed);
+    wait_for(engine.events(), Duration::from_secs(5), |e| {
+        matches!(e, EngineEvent::TrackEnded)
+    });
+    assert!(asked.elapsed() < Duration::from_secs(5));
+    assert_eq!(
+        captured.lock().unwrap().len() / 2,
+        RATE as usize,
+        "every frame played"
+    );
+}

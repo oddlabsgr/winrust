@@ -40,7 +40,8 @@ pub struct Shared {
     pub paused: AtomicBool,
     pub flush_requested: AtomicU64,
     pub flush_done: AtomicU64,
-    /// Real (non-silence) frames written to the device since start.
+    /// Ring frames consumed since start: played, or discarded by a flush. Silence is not
+    /// counted. Comparable with the decode thread's count of frames pushed.
     pub frames_played: AtomicU64,
     /// True while the callback waits for enough audio before (re)starting.
     pub buffering: AtomicBool,
@@ -124,6 +125,9 @@ impl Renderer {
             if let Ok(chunk) = self.consumer.read_chunk(n) {
                 chunk.commit_all();
             }
+            shared
+                .frames_played
+                .fetch_add((n / 2) as u64, Ordering::Release);
             self.flush_seen = requested;
             self.gated = true;
             shared.flush_done.store(requested, Ordering::Release);
@@ -280,6 +284,9 @@ mod tests {
         assert_eq!(out, [0.0, 0.0]);
         assert_eq!(shared.flush_done.load(Ordering::Acquire), 1);
         assert_eq!(p.slots(), 64);
+        // Discarded frames count as consumed, so ring positions stay in step with the
+        // decode thread's push count (review I6).
+        assert_eq!(shared.frames_played.load(Ordering::Acquire), 4);
     }
 
     #[test]
