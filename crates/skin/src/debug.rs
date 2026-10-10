@@ -2,10 +2,12 @@
 //! obvious in golden images. Sprites are painted in table order, so where sprites overlap
 //! the later one shows. Each `text.bmp` cell gets a colour too.
 
+use crate::bmp;
 use crate::image::{Image, Rect};
 use crate::skin::Skin;
 use crate::sprites::{SPRITES, Sheet};
 use crate::text::{GLYPH_H, GLYPH_W};
+use std::io::{Cursor, Write};
 
 /// Sheet pixels no sprite covers.
 pub const BACKGROUND: u32 = 0xFF20_2020;
@@ -46,4 +48,21 @@ impl Skin {
     pub fn debug() -> Skin {
         Skin::complete(sheets())
     }
+}
+
+/// The debug skin as a `.wsz`, with upper-case BMP names inside a folder (as many real
+/// skins are packed).
+pub fn wsz() -> Vec<u8> {
+    let mut out = Cursor::new(Vec::new());
+    let mut zip = zip::ZipWriter::new(&mut out);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for (sheet, image) in Sheet::ALL.iter().zip(sheets()) {
+        let name = format!("Debug Skin/{}.BMP", sheet.stem().to_ascii_uppercase());
+        zip.start_file(name, options).expect("writing to memory");
+        zip.write_all(&bmp::encode24(&image))
+            .expect("writing to memory");
+    }
+    zip.finish().expect("writing to memory");
+    out.into_inner()
 }

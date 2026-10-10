@@ -3,6 +3,7 @@
 
 pub mod bmp;
 pub mod debug;
+mod files;
 pub mod image;
 pub mod ini;
 pub mod pledit;
@@ -13,5 +14,5 @@ pub mod text;
 pub mod viscolor;
 
 pub use image::{Image, Rect};
-pub use skin::{Skin, SpriteRef};
+pub use skin::{Skin, SkinError, SpriteRef};
 pub use sprites::{Sheet, SpriteId};
