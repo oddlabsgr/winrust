@@ -3,5 +3,8 @@
 
 pub mod bmp;
 pub mod image;
+pub mod sprites;
+pub mod text;
 
 pub use image::{Image, Rect};
+pub use sprites::{Sheet, SpriteId};
