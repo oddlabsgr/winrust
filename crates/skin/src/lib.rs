@@ -1,0 +1,6 @@
+//! Winrust skin engine: loads classic Winamp 2.x skins (`.wsz`, `.zip` or a directory) and
+//! maps their sprites. Pure: no windowing or OS dependencies.
+
+pub mod image;
+
+pub use image::{Image, Rect};

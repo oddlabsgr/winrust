@@ -1,0 +1,15 @@
+[package]
+name = "winrust-skin"
+description = "Winrust skin engine: classic Winamp 2.x skins (.wsz) and the sprite map"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+image = { version = "0.25.10", default-features = false, features = ["bmp", "png"] }
+thiserror = "2.0.21"
+zip = { version = "9.0.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[dev-dependencies]
+tempfile = "3"
