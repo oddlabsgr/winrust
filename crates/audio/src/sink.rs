@@ -219,6 +219,8 @@ fn device_thread(
     events: Sender<SinkEvent>,
 ) {
     let mut first = true;
+    // An outage is reported once, and only when no output can be opened at all.
+    let mut outage_reported = false;
     loop {
         let lost = Arc::new(AtomicBool::new(false));
         match open_stream(name.as_deref(), &renderer, preferred_rate, lost.clone()) {
@@ -230,6 +232,7 @@ fn device_thread(
                     let _ = events.send(SinkEvent::RateChanged(rate));
                 }
                 preferred_rate = Some(rate);
+                outage_reported = false;
                 loop {
                     match stop.recv_timeout(Duration::from_millis(100)) {
                         Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
@@ -237,15 +240,19 @@ fn device_thread(
                         Err(RecvTimeoutError::Timeout) => {}
                     }
                 }
+                // Reopened quietly on the next turn (spec §6.7): not an error for the user.
                 drop(stream);
-                let _ = events.send(SinkEvent::Error("audio device lost, reopening".into()));
             }
             Err(e) => {
                 if first {
                     let _ = ready.send(Err(e));
                     return;
                 }
-                // Device gone (e.g. unplugged): retry once a second until stopped.
+                // Device gone (e.g. unplugged): tell the user once, retry every second.
+                if !outage_reported {
+                    outage_reported = true;
+                    let _ = events.send(SinkEvent::Error(format!("no audio output: {e}")));
+                }
                 match stop.recv_timeout(Duration::from_secs(1)) {
                     Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
                     Err(RecvTimeoutError::Timeout) => {}
@@ -314,6 +321,18 @@ fn open_stream(
     Ok((stream, rate))
 }
 
+/// Stream errors that leave the stream dead. A `DeviceChanged` stream was rerouted by the
+/// backend and keeps playing; xruns and refused real-time priority are not fatal either.
+fn needs_rebuild(kind: ErrorKind) -> bool {
+    matches!(
+        kind,
+        ErrorKind::DeviceNotAvailable
+            | ErrorKind::StreamInvalidated
+            | ErrorKind::HostUnavailable
+            | ErrorKind::DeviceBusy
+    )
+}
+
 fn build<T>(
     device: &cpal::Device,
     config: StreamConfig,
@@ -344,11 +363,29 @@ where
                     *d = T::from_sample(*s);
                 }
             },
-            move |err: cpal::Error| match err.kind() {
-                ErrorKind::Xrun | ErrorKind::RealtimeDenied => {}
-                _ => lost.store(true, Ordering::Relaxed),
+            move |err: cpal::Error| {
+                if needs_rebuild(err.kind()) {
+                    lost.store(true, Ordering::Relaxed);
+                }
             },
             None,
         )
         .map_err(|e| EngineError::Device(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_dead_streams_are_rebuilt() {
+        // Review I3: a rerouted default-device stream keeps playing; tearing it down caused a
+        // needless gap and a spurious error on every headphone plug.
+        assert!(!needs_rebuild(ErrorKind::DeviceChanged));
+        assert!(!needs_rebuild(ErrorKind::Xrun));
+        assert!(!needs_rebuild(ErrorKind::RealtimeDenied));
+        assert!(needs_rebuild(ErrorKind::DeviceNotAvailable));
+        assert!(needs_rebuild(ErrorKind::StreamInvalidated));
+        assert!(needs_rebuild(ErrorKind::HostUnavailable));
+    }
 }
