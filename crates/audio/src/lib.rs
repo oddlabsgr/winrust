@@ -8,6 +8,7 @@ pub mod icy;
 pub mod mp4;
 pub mod renderer;
 pub mod resample;
+pub mod sink;
 pub mod stream;
 pub mod timeline;
 pub mod types;
