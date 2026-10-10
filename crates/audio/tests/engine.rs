@@ -143,6 +143,24 @@ fn seek_jumps_and_reports_position() {
     );
 }
 
+/// Waits until no new audio has arrived for `quiet` and returns the captured length.
+fn settled_len(captured: &std::sync::Mutex<Vec<f32>>, quiet: Duration) -> usize {
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    let mut last = captured.lock().unwrap().len();
+    let mut since = std::time::Instant::now();
+    while std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+        let now = captured.lock().unwrap().len();
+        if now != last {
+            last = now;
+            since = std::time::Instant::now();
+        } else if since.elapsed() >= quiet {
+            return now;
+        }
+    }
+    panic!("audio kept arriving after pause");
+}
+
 #[test]
 fn pause_holds_and_play_resumes() {
     let dir = tempfile::tempdir().unwrap();
@@ -159,7 +177,8 @@ fn pause_holds_and_play_resumes() {
     wait_for(engine.events(), LONG, |e| {
         matches!(e, EngineEvent::State(PlaybackState::Paused))
     });
-    let held = captured.lock().unwrap().len();
+    // A buffer the output was already rendering when pause hit may still land.
+    let held = settled_len(&captured, Duration::from_millis(50));
     std::thread::sleep(Duration::from_millis(150));
     assert_eq!(
         captured.lock().unwrap().len(),
