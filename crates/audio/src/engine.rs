@@ -130,6 +130,13 @@ struct Active {
     cancel: Option<Cancel>,
 }
 
+struct ResumePoint {
+    source: Source,
+    position: Duration,
+    paused: bool,
+    next: Option<Source>,
+}
+
 struct Worker {
     rx: Receiver<Command>,
     events: Sender<EngineEvent>,
@@ -524,24 +531,37 @@ impl Worker {
         self.timeline = Timeline::new(rate);
     }
 
-    fn resume_point(&self) -> Option<(Source, Duration)> {
+    /// What to restore after the output is rebuilt (device switch or rate change).
+    fn resume_point(&self) -> Option<ResumePoint> {
         let info = self.timeline.current()?;
         let played = self.shared.frames_played.load(Ordering::Acquire);
-        Some((
-            info.source.clone(),
-            self.timeline.position(played).unwrap_or_default(),
-        ))
+        let next = match &self.active {
+            // The decoder already moved on to the queued track; it is not audible yet.
+            Some(active) if active.decoder.info().source != info.source => {
+                Some(active.decoder.info().source.clone())
+            }
+            _ => self.queued.clone(),
+        };
+        Some(ResumePoint {
+            source: info.source.clone(),
+            position: self.timeline.position(played).unwrap_or_default(),
+            paused: self.shared.paused.load(Ordering::Acquire),
+            next,
+        })
     }
 
-    fn resume(&mut self, point: Option<(Source, Duration)>) {
-        if let Some((source, position)) = point {
-            self.load(source);
-            if position > Duration::ZERO {
-                // The track must be audible before a seek is allowed; prime the timeline.
-                self.timeline.poll(self.pushed);
-                self.seek(position);
-            }
+    fn resume(&mut self, point: Option<ResumePoint>) {
+        let Some(point) = point else { return };
+        self.load(point.source);
+        if point.paused {
+            self.shared.paused.store(true, Ordering::Release);
         }
+        if point.position > Duration::ZERO {
+            // The track must be audible before a seek is allowed; prime the timeline.
+            self.timeline.poll(self.pushed);
+            self.seek(point.position);
+        }
+        self.queued = point.next;
     }
 
     fn poll_sink(&mut self) {

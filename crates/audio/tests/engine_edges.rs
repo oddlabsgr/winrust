@@ -343,3 +343,80 @@ content-type: audio/wav
         "{events:#?}"
     );
 }
+
+#[test]
+fn rate_change_while_paused_stays_paused() {
+    // Review I2: plugging in headphones while paused used to start playback.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("long.wav");
+    write_wav(&path, RATE, 2, &sine_i16(RATE, 0, 4 * RATE as usize));
+    let trigger = Arc::new(AtomicBool::new(false));
+    let inner = CaptureSink::realtime(RATE);
+    let captured = inner.captured();
+    let sink = RateChangingSink {
+        inner,
+        trigger: trigger.clone(),
+    };
+    let engine = Engine::spawn(Box::new(sink)).unwrap();
+    engine.handle().send(Command::Load(Source::File(path)));
+    wait_for(
+        engine.events(),
+        LONG,
+        |e| matches!(e, EngineEvent::Position(p) if *p >= Duration::from_millis(300)),
+    );
+    engine.handle().send(Command::Pause);
+    wait_for(engine.events(), LONG, |e| {
+        matches!(e, EngineEvent::State(PlaybackState::Paused))
+    });
+    std::thread::sleep(Duration::from_millis(100));
+    let held = captured.lock().unwrap().len();
+    trigger.store(true, Ordering::Release);
+    std::thread::sleep(Duration::from_millis(400));
+    let after: Vec<_> = engine.events().try_iter().collect();
+    assert_eq!(
+        captured.lock().unwrap().len(),
+        held,
+        "audio played while paused"
+    );
+    assert!(
+        !after
+            .iter()
+            .any(|e| matches!(e, EngineEvent::State(PlaybackState::Playing))),
+        "{after:#?}"
+    );
+}
+
+#[test]
+fn rate_change_keeps_the_queued_track() {
+    // Review I2: the gapless queue was dropped on a device rate change.
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (dir.path().join("a.wav"), dir.path().join("b.wav"));
+    write_wav(&a, RATE, 2, &sine_i16(RATE, 0, RATE as usize));
+    write_wav(&b, RATE, 2, &sine_i16(RATE, 0, RATE as usize / 2));
+    let trigger = Arc::new(AtomicBool::new(false));
+    let sink = RateChangingSink {
+        inner: CaptureSink::realtime(RATE),
+        trigger: trigger.clone(),
+    };
+    let engine = Engine::spawn(Box::new(sink)).unwrap();
+    engine.handle().send(Command::Load(Source::File(a)));
+    engine
+        .handle()
+        .send(Command::QueueNext(Source::File(b.clone())));
+    wait_for(
+        engine.events(),
+        LONG,
+        |e| matches!(e, EngineEvent::Position(p) if *p >= Duration::from_millis(300)),
+    );
+    trigger.store(true, Ordering::Release);
+    let events = wait_for(engine.events(), LONG, |e| {
+        matches!(e, EngineEvent::TrackEnded)
+    });
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            EngineEvent::TrackStarted { info, gapless: true } if info.source == Source::File(b.clone())
+        )),
+        "{events:#?}"
+    );
+}
