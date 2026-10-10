@@ -7,6 +7,7 @@ pub mod http;
 pub mod icy;
 pub mod mp4;
 pub mod resample;
+pub mod stream;
 pub mod types;
 pub mod volume;
 
