@@ -146,3 +146,10 @@ fn bad_numbers() {
         Vec::<Polygon>::new()
     );
 }
+
+#[test]
+fn huge_polygon_sizes_do_not_overflow() {
+    // Review I2: a size near usize::MAX overflowed the point index (panic in debug/fuzz).
+    let r = region::parse("[Normal]\nNumPoints=18446744073709551615,1,3\nPointList=0,0,1,0,1,1\n");
+    assert_eq!(r.normal, vec![vec![(0, 0), (1, 0), (1, 1)]]);
+}

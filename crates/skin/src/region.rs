@@ -59,16 +59,16 @@ fn polygons(num_points: &str, point_list: &str) -> Vec<Polygon> {
             continue;
         };
         if count < 3 {
-            next += count;
+            next = next.saturating_add(count);
             continue;
         }
-        let Some(slice) = points.get(next..(next + count).min(points.len())) else {
+        let Some(slice) = points.get(next..next.saturating_add(count).min(points.len())) else {
             break;
         };
         if slice.is_empty() {
             break;
         }
-        next += count;
+        next = next.saturating_add(count);
         if let Some(polygon) = slice.iter().copied().collect::<Option<Polygon>>() {
             out.push(polygon);
         }
