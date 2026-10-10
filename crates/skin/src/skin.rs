@@ -36,7 +36,7 @@ pub enum SkinError {
 }
 
 struct SheetImage {
-    /// Padded to at least `Sheet::size()`, so every sprite rectangle is inside it.
+    /// Exactly `Sheet::size()` (cropped or padded), so every sprite rectangle is inside it.
     image: Image,
     /// Size as decoded, before padding.
     width: u32,
@@ -99,7 +99,7 @@ impl Skin {
                     sheets[sheet as usize] = Some(Arc::new(SheetImage {
                         width: img.width,
                         height: img.height,
-                        image: img.padded(w, h),
+                        image: img.fitted(w, h),
                     }));
                 }
                 Err(e) => warnings.push(format!("{name}: {e}")),

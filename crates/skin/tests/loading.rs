@@ -221,3 +221,17 @@ fn loads_files_and_directories() {
         Err(SkinError::Io { .. })
     ));
 }
+
+#[test]
+fn sheets_are_kept_at_their_canonical_size() {
+    // Review I1: a sheet declared 2048×2048 kept 16 MiB alive for the skin's lifetime.
+    let skin = Skin::from_zip_bytes(&zip(&[
+        ("main.bmp", &solid_bmp(400, 300, RED)),
+        ("cbuttons.bmp", &solid_bmp(10, 10, GREEN)),
+    ]))
+    .unwrap();
+    let main = skin.sprite(SpriteId::MainWindowBackground).image;
+    assert_eq!((main.width, main.height), Sheet::Main.size());
+    let buttons = skin.sprite(SpriteId::MainPreviousButton).image;
+    assert_eq!((buttons.width, buttons.height), Sheet::Cbuttons.size());
+}

@@ -79,6 +79,16 @@ impl Image {
         out
     }
 
+    /// The image at exactly `width`×`height`: cropped, or padded with black.
+    pub fn fitted(self, width: u32, height: u32) -> Image {
+        if (self.width, self.height) == (width, height) {
+            return self;
+        }
+        let mut out = Image::new(width, height, BLACK);
+        out.blit(&self, Rect::new(0, 0, self.width, self.height), 0, 0);
+        out
+    }
+
     /// The image as a PNG file (for golden tests and dev tools).
     pub fn to_png(&self) -> Vec<u8> {
         let rgba: Vec<u8> = self

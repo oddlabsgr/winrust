@@ -39,3 +39,12 @@ fn fill_rect_is_clipped() {
     img.fill_rect(Rect::new(1, 1, 5, 5), 0xFFFF_FFFF);
     assert_eq!(img.pixels, vec![BLACK, BLACK, BLACK, 0xFFFF_FFFF]);
 }
+
+#[test]
+fn fitted_crops_and_pads() {
+    let mut img = Image::new(3, 1, 0xFF12_3456);
+    img.set(2, 0, 0xFFFF_FFFF);
+    let f = img.clone().fitted(2, 2);
+    assert_eq!(f.pixels, vec![0xFF12_3456, 0xFF12_3456, BLACK, BLACK]);
+    assert_eq!(img.clone().fitted(3, 1), img);
+}
