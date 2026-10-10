@@ -323,7 +323,15 @@ fn select_track(format: &dyn FormatReader, source: &Source) -> Result<SelectedTr
     let decoder = symphonia::default::get_codecs()
         .make_audio_decoder(params, &AudioDecoderOptions::default())
         .map_err(|e| EngineError::Unsupported(format!("{source}: {e}")))?;
-    let sample_rate = params.sample_rate.unwrap_or(44_100);
+    let sample_rate = match params.sample_rate {
+        Some(0) => {
+            return Err(EngineError::Unsupported(format!(
+                "{source}: invalid sample rate 0"
+            )));
+        }
+        Some(rate) => rate,
+        None => 44_100,
+    };
     let channels = params.channels.as_ref().map(|c| c.count()).unwrap_or(2);
     let duration = match (track.num_frames, track.duration, track.time_base) {
         (Some(n), _, _) if sample_rate > 0 => {

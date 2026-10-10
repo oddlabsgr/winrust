@@ -81,3 +81,27 @@ fn garbage_file_is_unsupported() {
         "{err:?}"
     );
 }
+
+#[test]
+fn zero_sample_rate_is_unsupported() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("zero.wav");
+    let mut bytes = Vec::new();
+    bytes.extend(b"RIFF");
+    bytes.extend(4132u32.to_le_bytes());
+    bytes.extend(b"WAVEfmt ");
+    bytes.extend(16u32.to_le_bytes());
+    bytes.extend([1, 0, 2, 0]); // PCM, stereo
+    bytes.extend(0u32.to_le_bytes()); // sample rate 0
+    bytes.extend(0u32.to_le_bytes()); // byte rate
+    bytes.extend([4, 0, 16, 0]); // block align, bits
+    bytes.extend(b"data");
+    bytes.extend(4096u32.to_le_bytes());
+    bytes.resize(bytes.len() + 4096, 0);
+    std::fs::write(&path, bytes).unwrap();
+    let err = Decoder::open_file(&path).err().unwrap();
+    assert!(
+        matches!(err, winrust_audio::types::EngineError::Unsupported(_)),
+        "{err:?}"
+    );
+}

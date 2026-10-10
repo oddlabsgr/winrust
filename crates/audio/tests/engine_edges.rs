@@ -184,3 +184,23 @@ fn seek_past_the_end_just_ends_the_track() {
         "{events:#?}"
     );
 }
+
+#[test]
+fn zero_sample_rate_file_is_rejected_and_engine_survives() {
+    // Review C1: symphonia accepts a WAV claiming 0 Hz; building a resampler for it used to
+    // panic the decode thread, silently killing the engine for the rest of the session.
+    let dir = tempfile::tempdir().unwrap();
+    let bad = dir.path().join("zero.wav");
+    std::fs::write(&bad, raw_wav(0, 4096)).unwrap();
+    let good = dir.path().join("good.wav");
+    write_wav(&good, RATE, 2, &sine_i16(RATE, 0, 4_410));
+    let engine = Engine::spawn(Box::new(CaptureSink::new(RATE))).unwrap();
+    engine.handle().send(Command::Load(Source::File(bad)));
+    wait_for(engine.events(), LONG, |e| {
+        matches!(e, EngineEvent::Error(EngineError::Unsupported(_)))
+    });
+    engine.handle().send(Command::Load(Source::File(good)));
+    wait_for(engine.events(), LONG, |e| {
+        matches!(e, EngineEvent::TrackEnded)
+    });
+}

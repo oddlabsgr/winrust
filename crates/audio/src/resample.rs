@@ -1,5 +1,6 @@
 //! Streaming stereo sample-rate conversion (rubato sinc), or pass-through when rates match.
 
+use crate::types::EngineError;
 use rubato::audioadapter_buffers::direct::InterleavedSlice;
 use rubato::{
     Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters, SincInterpolationType,
@@ -18,13 +19,21 @@ pub struct StreamResampler {
 }
 
 impl StreamResampler {
-    /// Converts stereo audio from `from` Hz to `to` Hz.
-    pub fn new(from: u32, to: u32) -> Self {
-        let inner = (from != to).then(|| {
+    /// Converts stereo audio from `from` Hz to `to` Hz. Rates come from untrusted files and
+    /// devices, so impossible ones (0 Hz) are an error rather than a panic.
+    pub fn new(from: u32, to: u32) -> Result<Self, EngineError> {
+        if from == 0 || to == 0 {
+            return Err(EngineError::Unsupported(format!(
+                "cannot resample {from} Hz to {to} Hz"
+            )));
+        }
+        let inner = if from == to {
+            None
+        } else {
             let params = SincInterpolationParameters::new(128, WindowFunction::Blackman2)
                 .oversampling_factor(256)
                 .interpolation(SincInterpolationType::Quadratic);
-            Async::<f32>::new_sinc(
+            let resampler = Async::<f32>::new_sinc(
                 f64::from(to) / f64::from(from),
                 1.0,
                 &params,
@@ -32,8 +41,9 @@ impl StreamResampler {
                 2,
                 FixedAsync::Input,
             )
-            .expect("valid resampler parameters")
-        });
+            .map_err(|e| EngineError::Unsupported(format!("resampler {from}->{to} Hz: {e}")))?;
+            Some(resampler)
+        };
         let mut r = StreamResampler {
             inner,
             pending: Vec::new(),
@@ -41,7 +51,7 @@ impl StreamResampler {
             skip_frames: 0,
         };
         r.reset();
-        r
+        Ok(r)
     }
 
     pub fn is_passthrough(&self) -> bool {
@@ -144,7 +154,7 @@ mod tests {
 
     #[test]
     fn equal_rates_pass_through() {
-        let mut r = StreamResampler::new(48_000, 48_000);
+        let mut r = StreamResampler::new(48_000, 48_000).unwrap();
         assert!(r.is_passthrough());
         let mut out = Vec::new();
         r.process(&[0.1, 0.2], &mut out);
@@ -154,7 +164,7 @@ mod tests {
     #[test]
     fn upsampling_keeps_length_and_pitch() {
         let input = sine(44_100, 440.0, 1.0);
-        let mut r = StreamResampler::new(44_100, 48_000);
+        let mut r = StreamResampler::new(44_100, 48_000).unwrap();
         let mut out = Vec::new();
         for chunk in input.chunks(2 * 700) {
             r.process(chunk, &mut out);
@@ -172,7 +182,7 @@ mod tests {
     #[test]
     fn downsampling_keeps_length_and_pitch() {
         let input = sine(96_000, 440.0, 1.0);
-        let mut r = StreamResampler::new(96_000, 48_000);
+        let mut r = StreamResampler::new(96_000, 48_000).unwrap();
         let mut out = Vec::new();
         for chunk in input.chunks(2 * 999) {
             r.process(chunk, &mut out);
@@ -188,8 +198,14 @@ mod tests {
     }
 
     #[test]
+    fn zero_rate_is_an_error() {
+        assert!(StreamResampler::new(0, 48_000).is_err());
+        assert!(StreamResampler::new(44_100, 0).is_err());
+    }
+
+    #[test]
     fn reset_discards_pending_audio() {
-        let mut r = StreamResampler::new(44_100, 48_000);
+        let mut r = StreamResampler::new(44_100, 48_000).unwrap();
         let mut out = Vec::new();
         r.process(&sine(44_100, 440.0, 0.01), &mut out);
         r.reset();

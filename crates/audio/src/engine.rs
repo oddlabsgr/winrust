@@ -10,6 +10,7 @@ use crate::timeline::{Timeline, TimelineEvent};
 use crate::types::{Command, EngineError, EngineEvent, EqSettings, PlaybackState, Source};
 use crate::volume::slider_to_gain;
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -337,34 +338,16 @@ impl Worker {
     }
 
     fn open(&mut self, source: &Source) -> Result<Active, EngineError> {
-        let (decoder, is_stream, titles) = match source {
-            Source::File(path) => (Decoder::open_file(path)?, false, None),
-            Source::Url(url) => {
-                let s = stream::open(url, Cancel::new(self.epoch.clone()))?;
-                let mut hint = Hint::new();
-                if let Some(mime) = &s.content_type {
-                    hint.mime_type(mime);
-                    if let Some(ext) = extension_for_mime(mime) {
-                        hint.with_extension(ext);
-                    }
-                }
-                let mut decoder = Decoder::open_media(
-                    source.clone(),
-                    Box::new(ReadOnlySource::new(s.reader)),
-                    &hint,
-                )?;
-                decoder.set_kbps(s.bitrate);
-                (decoder, true, Some(s.titles))
-            }
-        };
-        let source_rate = decoder.sample_rate();
-        Ok(Active {
-            resampler: StreamResampler::new(source_rate, self.device_rate),
-            decoder,
-            source_rate,
-            is_stream,
-            titles,
-        })
+        // symphonia parses untrusted files and network data: a panic there must cost one
+        // track, not the whole engine.
+        let (epoch, device_rate) = (self.epoch.clone(), self.device_rate);
+        catch_unwind(AssertUnwindSafe(|| open_source(source, epoch, device_rate))).unwrap_or_else(
+            |_| {
+                Err(EngineError::Decode(format!(
+                    "decoder crashed opening {source}"
+                )))
+            },
+        )
     }
 
     fn set_stream_mode(&mut self, is_stream: bool) {
@@ -448,15 +431,24 @@ impl Worker {
                 return;
             };
             self.decoded.clear();
-            match active.decoder.decode_next(&mut self.decoded) {
+            let decoded = &mut self.decoded;
+            let step = catch_unwind(AssertUnwindSafe(|| active.decoder.decode_next(decoded)))
+                .unwrap_or_else(|_| Err(EngineError::Decode("decoder crashed".into())));
+            let step = match step {
+                Ok(true) if active.decoder.sample_rate() != active.source_rate => {
+                    // Chained stream changed rate mid-way.
+                    active.resampler.flush(&mut self.resampled);
+                    active.source_rate = active.decoder.sample_rate();
+                    StreamResampler::new(active.source_rate, self.device_rate).map(|r| {
+                        active.resampler = r;
+                        true
+                    })
+                }
+                other => other,
+            };
+            match step {
                 Ok(true) => {
-                    if active.decoder.sample_rate() != active.source_rate {
-                        // Chained stream changed rate mid-way.
-                        active.resampler.flush(&mut self.resampled);
-                        active.source_rate = active.decoder.sample_rate();
-                        active.resampler =
-                            StreamResampler::new(active.source_rate, self.device_rate);
-                    }
+                    let active = self.active.as_mut().expect("checked above");
                     active.resampler.process(&self.decoded, &mut self.resampled);
                     self.commit_resampled();
                 }
@@ -592,6 +584,42 @@ impl Worker {
             }
         }
     }
+}
+
+/// Opens a file or stream and prepares its resampler. Runs inside `catch_unwind`.
+fn open_source(
+    source: &Source,
+    epoch: Arc<AtomicU64>,
+    device_rate: u32,
+) -> Result<Active, EngineError> {
+    let (decoder, is_stream, titles) = match source {
+        Source::File(path) => (Decoder::open_file(path)?, false, None),
+        Source::Url(url) => {
+            let s = stream::open(url, Cancel::new(epoch))?;
+            let mut hint = Hint::new();
+            if let Some(mime) = &s.content_type {
+                hint.mime_type(mime);
+                if let Some(ext) = extension_for_mime(mime) {
+                    hint.with_extension(ext);
+                }
+            }
+            let mut decoder = Decoder::open_media(
+                source.clone(),
+                Box::new(ReadOnlySource::new(s.reader)),
+                &hint,
+            )?;
+            decoder.set_kbps(s.bitrate);
+            (decoder, true, Some(s.titles))
+        }
+    };
+    let source_rate = decoder.sample_rate();
+    Ok(Active {
+        resampler: StreamResampler::new(source_rate, device_rate)?,
+        decoder,
+        source_rate,
+        is_stream,
+        titles,
+    })
 }
 
 /// Drops commands made pointless by a later one in the same batch: anything before the

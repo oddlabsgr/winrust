@@ -76,3 +76,23 @@ pub fn wait_for(
     }
     panic!("timed out; events so far: {seen:#?}");
 }
+
+/// A 16-bit stereo PCM WAV header claiming `rate`, followed by `data_len` zero bytes.
+/// Lets tests build files hound refuses to write (e.g. rate 0).
+pub fn raw_wav(rate: u32, data_len: u32) -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend(b"RIFF");
+    b.extend((36 + data_len).to_le_bytes());
+    b.extend(b"WAVEfmt ");
+    b.extend(16u32.to_le_bytes());
+    b.extend(1u16.to_le_bytes()); // PCM
+    b.extend(2u16.to_le_bytes()); // channels
+    b.extend(rate.to_le_bytes());
+    b.extend((rate * 4).to_le_bytes()); // byte rate
+    b.extend(4u16.to_le_bytes()); // block align
+    b.extend(16u16.to_le_bytes()); // bits per sample
+    b.extend(b"data");
+    b.extend(data_len.to_le_bytes());
+    b.resize(b.len() + data_len as usize, 0);
+    b
+}
