@@ -24,12 +24,13 @@ jobs:
         target: [bmp, skin_archive, icy]
     steps:
       - uses: actions/checkout@v5
+      # rust-toolchain.toml pins stable; `cargo +nightly` below overrides it.
       - uses: dtolnay/rust-toolchain@nightly
       - name: Install ALSA headers
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
       - run: cargo install cargo-fuzz --locked
       - name: Fuzz
-        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=${{ github.event_name == 'pull_request' && 60 || 600 }}
+        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=${{ github.event_name == 'pull_request' && 60 || 600 }}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
