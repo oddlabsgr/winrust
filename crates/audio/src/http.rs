@@ -160,7 +160,11 @@ fn read_head(reader: &mut impl BufRead) -> Result<Head, EngineError> {
     let mut next_line = |line: &mut String| -> Result<(), EngineError> {
         line.clear();
         let mut raw = Vec::new();
+        // Never read past the header budget, even when a line has no newline.
+        let budget = (MAX_HEAD_BYTES - total.min(MAX_HEAD_BYTES) + 1) as u64;
         let n = reader
+            .by_ref()
+            .take(budget)
             .read_until(b'\n', &mut raw)
             .map_err(|e| err(format!("read failed: {e}")))?;
         total += n;
@@ -219,6 +223,29 @@ mod tests {
         let mut body = String::new();
         reader.read_to_string(&mut body).unwrap();
         assert_eq!(body, "BODY");
+    }
+
+    #[test]
+    fn endless_header_line_is_cut_off() {
+        // Review: a hostile or broken server sending no newline must not make us buffer
+        // without limit.
+        struct Counting<R>(R, std::rc::Rc<std::cell::Cell<usize>>);
+        impl<R: Read> Read for Counting<R> {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let n = self.0.read(buf)?;
+                self.1.set(self.1.get() + n);
+                Ok(n)
+            }
+        }
+        let consumed = std::rc::Rc::new(std::cell::Cell::new(0));
+        let source = std::io::repeat(b'a').take(4 * 1024 * 1024);
+        let mut reader = BufReader::new(Counting(source, consumed.clone()));
+        assert!(read_head(&mut reader).is_err());
+        assert!(
+            consumed.get() <= MAX_HEAD_BYTES + 8 * 1024,
+            "read {} bytes",
+            consumed.get()
+        );
     }
 
     #[test]
