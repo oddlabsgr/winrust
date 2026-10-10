@@ -235,26 +235,31 @@ fn decode_rle(
 ) {
     let four = h.compression == BI_RLE4;
     let (mut x, mut row) = (0u32, 0u32);
-    let mut put = |x: &mut u32, row: u32, index: u8| {
-        if *x < h.width && row < h.height {
-            img.set(*x, row_of(row), pal(usize::from(index)));
+    let mut put = |x: u32, row: u32, index: u8| {
+        if row < h.height {
+            img.set(x, row_of(row), pal(usize::from(index)));
         }
-        *x += 1;
+    };
+    // Pixel k of a run: RLE4 alternates the high and low nibble.
+    let nibble = |byte: u8, k: usize| {
+        if !four {
+            byte
+        } else if k.is_multiple_of(2) {
+            byte >> 4
+        } else {
+            byte & 15
+        }
     };
     let mut i = 0;
     while let (Some(&n), Some(&v)) = (data.get(i), data.get(i + 1)) {
         i += 2;
+        // Only pixels left of the image edge are drawn; the rest are skipped in one step.
+        let visible = |count: usize, x: u32| count.min(h.width.saturating_sub(x) as usize);
         if n > 0 {
-            for k in 0..n {
-                let index = if !four {
-                    v
-                } else if k.is_multiple_of(2) {
-                    v >> 4
-                } else {
-                    v & 15
-                };
-                put(&mut x, row, index);
+            for k in 0..visible(usize::from(n), x) {
+                put(x + k as u32, row, nibble(v, k));
             }
+            x = x.saturating_add(u32::from(n));
             continue;
         }
         match v {
@@ -268,28 +273,22 @@ fn decode_rle(
                     return;
                 };
                 i += 2;
-                x += u32::from(dx);
-                row += u32::from(dy);
+                x = x.saturating_add(u32::from(dx));
+                row = row.saturating_add(u32::from(dy));
             }
             count => {
-                let bytes = if four {
-                    usize::from(count).div_ceil(2)
-                } else {
-                    usize::from(count)
-                };
-                for k in 0..usize::from(count) {
+                let count = usize::from(count);
+                let bytes = if four { count.div_ceil(2) } else { count };
+                for k in 0..visible(count, x) {
                     let Some(&b) = data.get(i + if four { k / 2 } else { k }) else {
                         return;
                     };
-                    let index = if !four {
-                        b
-                    } else if k.is_multiple_of(2) {
-                        b >> 4
-                    } else {
-                        b & 15
-                    };
-                    put(&mut x, row, index);
+                    put(x + k as u32, row, nibble(b, k));
                 }
+                if data.len() < i + bytes {
+                    return;
+                }
+                x = x.saturating_add(count as u32);
                 i += bytes + bytes % 2;
             }
         }

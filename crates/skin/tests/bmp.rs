@@ -248,3 +248,21 @@ fn decode_any_reads_png_and_reports_garbage() {
     odd[14..18].copy_from_slice(&99u32.to_le_bytes());
     assert!(decode_any(&odd).unwrap_err().contains("header size 99"));
 }
+
+#[test]
+fn rle_pixels_past_the_row_end_are_skipped_in_bulk() {
+    // Review I1: every pixel of a run was visited even past the image edge, so 16 MiB of
+    // RLE could take seconds per sheet. 2 MiB each of encoded and absolute runs here.
+    let pal = [[0, 0, 0xFF, 0]];
+    let mut absolute = vec![0, 254];
+    absolute.resize(256, 0);
+    for (name, unit) in [("encoded", vec![255, 0]), ("absolute", absolute)] {
+        let rle = unit.repeat((2 << 20) / unit.len());
+        let file = bmp(4, 1, 8, 1, &pal, &rle);
+        let start = std::time::Instant::now();
+        let img = decode(&file).unwrap();
+        let took = start.elapsed();
+        assert_eq!(img.pixels, vec![RED; 4], "{name}");
+        assert!(took < std::time::Duration::from_secs(2), "{name}: {took:?}");
+    }
+}
