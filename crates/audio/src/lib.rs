@@ -3,6 +3,7 @@
 pub mod decoder;
 pub mod dsp;
 pub mod eq;
+pub mod icy;
 pub mod mp4;
 pub mod resample;
 pub mod types;
