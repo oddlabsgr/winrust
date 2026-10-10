@@ -83,11 +83,11 @@ impl Skin {
         Self::from_files(SkinFiles::from_zip(bytes).map_err(SkinError::NotASkin)?)
     }
 
-    fn from_files(files: SkinFiles) -> Result<Skin, SkinError> {
+    fn from_files(mut files: SkinFiles) -> Result<Skin, SkinError> {
         if files.is_empty() {
             return Err(SkinError::NotASkin("no skin files found".into()));
         }
-        let mut warnings = files.warnings.clone();
+        let mut warnings = std::mem::take(&mut files.warnings);
         let mut sheets: Vec<Option<Arc<SheetImage>>> = vec![None; Sheet::ALL.len()];
         for sheet in Sheet::ALL {
             let Some((name, data)) = files.image(sheet.stem()) else {
@@ -109,6 +109,10 @@ impl Skin {
         if sheets[Sheet::Balance as usize].is_none() {
             sheets[Sheet::Balance as usize] = sheets[Sheet::Volume as usize].clone();
         }
+        let cursors = CURSORS
+            .iter()
+            .filter_map(|&c| Some((c, files.take(&format!("{}.cur", c.to_ascii_lowercase()))?)))
+            .collect();
         let text = |name: &str| files.get(name).map(decode_text);
         Ok(Skin {
             sheets,
@@ -122,13 +126,7 @@ impl Skin {
             regions: text("region.txt")
                 .map(|t| region::parse(&t))
                 .unwrap_or_default(),
-            cursors: CURSORS
-                .iter()
-                .filter_map(|&c| {
-                    let data = files.get(&format!("{}.cur", c.to_ascii_lowercase()))?;
-                    Some((c, data.to_vec()))
-                })
-                .collect(),
+            cursors,
             warnings,
         })
     }

@@ -235,3 +235,85 @@ fn sheets_are_kept_at_their_canonical_size() {
     let buttons = skin.sprite(SpriteId::MainPreviousButton).image;
     assert_eq!((buttons.width, buttons.height), Sheet::Cbuttons.size());
 }
+
+#[test]
+fn text_and_cursor_files_are_capped_at_one_mib() {
+    // Review I1: 24 cursors of 16 MiB each stayed resident; real ones are a few KB.
+    let mut pledit = b"[Text]\nNormal=#FF0000\n".to_vec();
+    pledit.resize(2 << 20, b' ');
+    let cursor = vec![0u8; 2 << 20];
+    let skin = Skin::from_zip_bytes(&zip(&[
+        ("pledit.txt", &pledit),
+        ("close.cur", &cursor),
+        ("main.bmp", &solid_bmp(275, 116, RED)),
+    ]))
+    .unwrap();
+    assert_eq!(
+        skin.playlist.normal, 0xFF00_FF00,
+        "oversized pledit.txt is ignored"
+    );
+    assert!(skin.cursors.is_empty());
+    assert_eq!(skin.warnings.len(), 2, "{:?}", skin.warnings);
+}
+
+/// Rewrites the compression method of the archive's first entry only.
+fn set_first_method(zip: &mut [u8], method: u16) {
+    for (sig, offset) in [(b"PK\x03\x04", 8), (b"PK\x01\x02", 10)] {
+        let i = zip.windows(4).position(|w| w == sig).unwrap();
+        zip[i + offset..i + offset + 2].copy_from_slice(&method.to_le_bytes());
+    }
+}
+
+fn stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    use std::io::Write;
+    let mut out = std::io::Cursor::new(Vec::new());
+    let mut z = zip::ZipWriter::new(&mut out);
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for (name, data) in entries {
+        z.start_file(*name, stored).unwrap();
+        z.write_all(data).unwrap();
+    }
+    z.finish().unwrap();
+    out.into_inner()
+}
+
+#[test]
+fn only_the_last_copy_of_a_name_is_decompressed() {
+    // Review I1: every matching entry was inflated though only the last is used, so an
+    // archive repeating one large entry could keep the loader busy for minutes.
+    let mut bytes = stored_zip(&[
+        ("a/main.bmp", &solid_bmp(275, 116, RED)),
+        ("b/main.bmp", &solid_bmp(275, 116, GREEN)),
+    ]);
+    set_first_method(&mut bytes, 6); // unreadable if anyone tries to inflate it
+    let skin = Skin::from_zip_bytes(&bytes).unwrap();
+    assert_eq!(pixel(&skin, SpriteId::MainWindowBackground, 0, 0), GREEN);
+    assert!(skin.warnings.is_empty(), "{:?}", skin.warnings);
+}
+
+#[test]
+fn archive_contents_are_capped_at_64_mib() {
+    // Review I1: many 16 MiB files were all held at once.
+    let mut big = solid_bmp(8, 8, RED);
+    big.resize(15 << 20, 0);
+    let names = [
+        "main.bmp",
+        "cbuttons.bmp",
+        "titlebar.bmp",
+        "numbers.bmp",
+        "nums_ex.bmp",
+    ];
+    let entries: Vec<(&str, &[u8])> = names.iter().map(|n| (*n, big.as_slice())).collect();
+    let skin = Skin::from_zip_bytes(&stored_zip(&entries)).unwrap();
+    assert!(skin.has_sheet(Sheet::Numbers));
+    assert!(
+        !skin.has_sheet(Sheet::NumsEx),
+        "the fifth 15 MiB file exceeds the budget"
+    );
+    assert!(
+        skin.warnings.iter().any(|w| w.contains("nums_ex.bmp")),
+        "{:?}",
+        skin.warnings
+    );
+}
