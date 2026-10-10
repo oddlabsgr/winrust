@@ -1,0 +1,9 @@
+[package]
+name = "winrust"
+description = "Winrust: a Winamp 2.x-style music player"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
