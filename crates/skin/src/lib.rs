@@ -3,8 +3,12 @@
 
 pub mod bmp;
 pub mod image;
+pub mod ini;
+pub mod pledit;
+pub mod region;
 pub mod sprites;
 pub mod text;
+pub mod viscolor;
 
 pub use image::{Image, Rect};
 pub use sprites::{Sheet, SpriteId};
