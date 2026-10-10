@@ -3,7 +3,7 @@
 use crate::renderer::Renderer;
 use crate::types::EngineError;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{BufferSize, ErrorKind, FromSample, SampleFormat, SizedSample, StreamConfig};
+use cpal::{BufferSize, DeviceId, ErrorKind, FromSample, SampleFormat, SizedSample, StreamConfig};
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, unbounded};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -127,7 +127,8 @@ impl Drop for CaptureSink {
 // ---------------------------------------------------------------------------------------------
 
 /// Real output device. A dedicated thread owns the cpal stream (streams are not `Send` on
-/// every platform) and rebuilds it when the device disappears.
+/// every platform), rebuilds it when the device disappears, and moves it when the system
+/// default changes.
 pub struct CpalSink {
     device: Option<String>,
     rate: u32,
@@ -224,7 +225,7 @@ fn device_thread(
     loop {
         let lost = Arc::new(AtomicBool::new(false));
         match open_stream(name.as_deref(), &renderer, preferred_rate, lost.clone()) {
-            Ok((stream, rate)) => {
+            Ok((stream, rate, followed)) => {
                 if first {
                     let _ = ready.send(Ok(rate));
                     first = false;
@@ -233,10 +234,16 @@ fn device_thread(
                 }
                 preferred_rate = Some(rate);
                 outage_reported = false;
+                let moved = || {
+                    followed
+                        .as_ref()
+                        .is_some_and(|id| default_moved(id, current_default().as_ref()))
+                };
                 loop {
                     match stop.recv_timeout(Duration::from_millis(100)) {
                         Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
                         Err(RecvTimeoutError::Timeout) if lost.load(Ordering::Relaxed) => break,
+                        Err(RecvTimeoutError::Timeout) if moved() => break,
                         Err(RecvTimeoutError::Timeout) => {}
                     }
                 }
@@ -262,12 +269,17 @@ fn device_thread(
     }
 }
 
-fn open_stream(
-    name: Option<&str>,
-    renderer: &SharedRenderer,
-    preferred_rate: Option<u32>,
-    lost: Arc<AtomicBool>,
-) -> Result<(cpal::Stream, u32), EngineError> {
+/// Whether a stream that follows the system default must move to another device.
+fn default_moved<T: PartialEq>(opened: &T, current: Option<&T>) -> bool {
+    current.is_some_and(|c| c != opened)
+}
+
+fn current_default() -> Option<DeviceId> {
+    cpal::default_host().default_output_device()?.id().ok()
+}
+
+/// The device to open, plus the id of the system default when the stream follows it.
+fn pick_device(name: Option<&str>) -> Result<(cpal::Device, Option<DeviceId>), EngineError> {
     let host = cpal::default_host();
     let named = name.and_then(|n| {
         host.output_devices().ok()?.find(|d| {
@@ -276,9 +288,32 @@ fn open_stream(
                 .unwrap_or(false)
         })
     });
-    let device = named
-        .or_else(|| host.default_output_device())
+    if let Some(device) = named {
+        return Ok((device, None));
+    }
+    let device = host
+        .default_output_device()
         .ok_or_else(|| EngineError::Device("no output device".into()))?;
+    // On Windows, open the concrete endpoint rather than cpal's virtual default device:
+    // re-activating the virtual default after the device in use is unplugged fails with
+    // RPC_E_CHANGED_MODE until the default changes again, which left playback silent. The
+    // device thread follows default changes itself instead.
+    #[cfg(windows)]
+    if let Ok(id) = device.id()
+        && let Some(endpoint) = host.device_by_id(&id)
+    {
+        return Ok((endpoint, Some(id)));
+    }
+    Ok((device, None))
+}
+
+fn open_stream(
+    name: Option<&str>,
+    renderer: &SharedRenderer,
+    preferred_rate: Option<u32>,
+    lost: Arc<AtomicBool>,
+) -> Result<(cpal::Stream, u32, Option<DeviceId>), EngineError> {
+    let (device, followed) = pick_device(name)?;
     let default = device
         .default_output_config()
         .map_err(|e| EngineError::Device(e.to_string()))?;
@@ -318,7 +353,7 @@ fn open_stream(
     stream
         .play()
         .map_err(|e| EngineError::Device(e.to_string()))?;
-    Ok((stream, rate))
+    Ok((stream, rate, followed))
 }
 
 /// Stream errors that leave the stream dead. A `DeviceChanged` stream was rerouted by the
@@ -387,5 +422,14 @@ mod tests {
         assert!(needs_rebuild(ErrorKind::DeviceNotAvailable));
         assert!(needs_rebuild(ErrorKind::StreamInvalidated));
         assert!(needs_rebuild(ErrorKind::HostUnavailable));
+    }
+
+    #[test]
+    fn a_stream_following_the_default_moves_when_the_default_changes() {
+        // Headphones plugged in: the default moved, so the stream must follow it.
+        assert!(default_moved(&"speakers", Some(&"headphones")));
+        assert!(!default_moved(&"speakers", Some(&"speakers")));
+        // No default at all: keep the stream; it is rebuilt if it dies.
+        assert!(!default_moved(&"speakers", None));
     }
 }
