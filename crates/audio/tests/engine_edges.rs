@@ -204,3 +204,34 @@ fn zero_sample_rate_file_is_rejected_and_engine_survives() {
         matches!(e, EngineEvent::TrackEnded)
     });
 }
+
+#[test]
+fn late_queue_next_plays_the_next_track_fully() {
+    // Review I4: QueueNext after the current track is fully decoded used to report
+    // TrackEnded the instant the queued track started.
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (dir.path().join("a.wav"), dir.path().join("b.wav"));
+    write_wav(&a, RATE, 2, &sine_i16(RATE, 0, RATE as usize / 10));
+    write_wav(&b, RATE, 2, &sine_i16(RATE, 0, RATE as usize / 2));
+    let engine = Engine::spawn(Box::new(CaptureSink::realtime(RATE))).unwrap();
+    engine.handle().send(Command::Load(Source::File(a)));
+    wait_for(engine.events(), LONG, |e| {
+        matches!(e, EngineEvent::TrackStarted { .. })
+    });
+    engine
+        .handle()
+        .send(Command::QueueNext(Source::File(b.clone())));
+    wait_for(
+        engine.events(),
+        LONG,
+        |e| matches!(e, EngineEvent::TrackStarted { info, .. } if info.source == Source::File(b.clone())),
+    );
+    let rest = wait_for(engine.events(), LONG, |e| {
+        matches!(e, EngineEvent::TrackEnded)
+    });
+    let positions = rest
+        .iter()
+        .filter(|e| matches!(e, EngineEvent::Position(_)))
+        .count();
+    assert!(positions >= 2, "b ended without playing: {rest:#?}");
+}

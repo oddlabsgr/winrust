@@ -40,8 +40,10 @@ impl Timeline {
         }
     }
 
-    /// A track whose first frame will be device frame `start_frame`.
+    /// A track whose first frame will be device frame `start_frame`. Any end set earlier is
+    /// void: playback now continues into this track.
     pub fn push_track(&mut self, start_frame: u64, info: TrackInfo, gapless: bool) {
+        self.end_frame = None;
         self.upcoming.push_back(Segment {
             start_frame,
             base: Duration::ZERO,
@@ -175,6 +177,27 @@ mod tests {
                 TimelineEvent::Ended
             ]
         );
+    }
+
+    #[test]
+    fn pushing_a_track_after_the_end_moves_the_end() {
+        // Review I4: QueueNext arriving while the last track drains.
+        let mut t = Timeline::new(1_000);
+        t.push_track(0, info("a"), false);
+        t.set_end(100);
+        t.poll(0);
+        t.push_track(100, info("b"), true);
+        assert_eq!(
+            t.poll(100),
+            vec![TimelineEvent::Started {
+                info: info("b"),
+                gapless: true
+            }]
+        );
+        assert_eq!(t.position(150), Some(Duration::from_millis(50)));
+        t.set_end(300);
+        assert!(t.poll(299).is_empty());
+        assert_eq!(t.poll(300), vec![TimelineEvent::Ended]);
     }
 
     #[test]
