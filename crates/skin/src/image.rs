@@ -78,4 +78,23 @@ impl Image {
         out.blit(self, Rect::new(0, 0, self.width, self.height), 0, 0);
         out
     }
+
+    /// The image as a PNG file (for golden tests and dev tools).
+    pub fn to_png(&self) -> Vec<u8> {
+        let rgba: Vec<u8> = self
+            .pixels
+            .iter()
+            .flat_map(|p| {
+                let [a, r, g, b] = p.to_be_bytes();
+                [r, g, b, a]
+            })
+            .collect();
+        let buffer = image::RgbaImage::from_raw(self.width, self.height, rgba)
+            .expect("pixel count matches the size");
+        let mut out = std::io::Cursor::new(Vec::new());
+        buffer
+            .write_to(&mut out, image::ImageFormat::Png)
+            .expect("encoding to memory");
+        out.into_inner()
+    }
 }

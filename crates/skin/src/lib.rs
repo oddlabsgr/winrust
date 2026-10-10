@@ -2,6 +2,7 @@
 //! maps their sprites. Pure: no windowing or OS dependencies.
 
 pub mod bmp;
+pub mod contact;
 pub mod debug;
 mod files;
 pub mod image;
@@ -13,6 +14,7 @@ pub mod sprites;
 pub mod text;
 pub mod viscolor;
 
+pub use contact::contact_sheet;
 pub use image::{Image, Rect};
 pub use skin::{Skin, SkinError, SpriteRef};
 pub use sprites::{Sheet, SpriteId};
