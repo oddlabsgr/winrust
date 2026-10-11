@@ -2,9 +2,9 @@
 
 A cross-platform clone of the classic Winamp 2.x music player, written in Rust.
 
-> **Status:** early development (milestone M2). The audio engine works and can be driven from
-> the terminal with `winrust-cli`, and the skin engine loads classic `.wsz` skins. The skinned
-> player window is not built yet.
+> **Status:** early development (milestone M3). The skinned main window plays files, folders
+> and internet radio given on the command line or dropped on it. The playlist and equalizer
+> windows, menus and user skins come in later milestones.
 
 Winrust aims to reproduce Winamp 2.x's main window, equalizer and playlist editor, and to
 render classic `.wsz` skins pixel for pixel on Windows, macOS and Linux. Scope and roadmap:
@@ -27,6 +27,20 @@ normal builds and tests do not.
 `cargo xtask gen-skin` redraws the default skin, Winrust Base, into `assets/skin/` from the
 code in `xtask/src/gen_skin/`. Its output is committed too, and a test fails when the two
 drift apart.
+
+## Running the player
+
+```sh
+cargo run --release -p winrust -- song.mp3 some/folder https://example.com/stream
+```
+
+Files, folders (their audio files, in name order) and stream URLs play in the order given;
+dropping files or folders on the window replaces them. The buttons, sliders and Winamp's
+hotkeys work as in Winamp 2: Z X C V B for previous, play, pause, stop and next, arrows for
+seeking and volume, Ctrl+D double size, Ctrl+W shade mode; the full table is in the
+[M3 design](docs/superpowers/specs/2026-10-11-m3-main-window-design.md#6-hotkey-table).
+Settings are kept in `config.toml` in the OS config folder (`%APPDATA%\winrust`,
+`~/Library/Application Support/winrust` or `~/.config/winrust`).
 
 ## Trying the audio engine
 

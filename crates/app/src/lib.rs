@@ -3,5 +3,6 @@
 pub mod config;
 pub mod input;
 pub mod model;
+pub mod present;
 pub mod queue;
 pub mod sources;
