@@ -432,10 +432,9 @@ fn rate_change_keeps_the_queued_track() {
     );
 }
 
-#[test]
-fn position_and_state_keep_updating_while_stream_stalls() {
-    // M1 carry-forward: a stalled stream read used to block the decode thread, so position
-    // and state stopped updating (and Pause waited) until data resumed or the read timed out.
+/// A WAV stream that sends 3 s of audio (past the 2 s prebuffer), then stays silent on the
+/// wire for half a minute. Returns its URL.
+fn stalling_stream() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     std::thread::spawn(move || {
@@ -443,26 +442,29 @@ fn position_and_state_keep_updating_while_stream_stalls() {
         let mut req = [0u8; 1024];
         let _ = sock.read(&mut req);
         let mut out = b"HTTP/1.0 200 OK\r\ncontent-type: audio/wav\r\n\r\n".to_vec();
-        // 3 s of audio: past the 2 s prebuffer, then silence on the wire.
         let wav = wav_bytes(RATE, &sine_i16(RATE, 0, 10 * RATE as usize));
         out.extend(&wav[..44 + 3 * RATE as usize * 4]);
         sock.write_all(&out).unwrap();
         std::thread::sleep(Duration::from_secs(30));
     });
+    format!("http://{addr}/")
+}
+
+#[test]
+fn time_moves_and_pause_answers_while_a_stream_stalls() {
+    // M1 carry-forward: a stalled stream read used to block the decode thread, so the time
+    // froze and Pause waited until data resumed or the read timed out.
     let engine = Engine::spawn(Box::new(CaptureSink::realtime(RATE))).unwrap();
     engine
         .handle()
-        .send(Command::Load(Source::Url(format!("http://{addr}/"))));
-    // The buffered audio plays on while the network is silent, and the time keeps moving...
+        .send(Command::Load(Source::Url(stalling_stream())));
+    // The decoder takes in all 3 s at once and the network goes quiet; the buffered audio
+    // plays on, and the time with it. (Half a second: slow CI timers play below real speed.)
     wait_for(
         engine.events(),
         LONG,
-        |e| matches!(e, EngineEvent::Position(p) if *p >= Duration::from_millis(2500)),
+        |e| matches!(e, EngineEvent::Position(p) if *p >= Duration::from_millis(500)),
     );
-    // ...until the buffer runs dry, which the engine reports.
-    wait_for(engine.events(), LONG, |e| {
-        matches!(e, EngineEvent::State(PlaybackState::Buffering))
-    });
     let asked = Instant::now();
     engine.handle().send(Command::Pause);
     wait_for(engine.events(), LONG, |e| {
@@ -473,4 +475,20 @@ fn position_and_state_keep_updating_while_stream_stalls() {
         "pause took {:?}",
         asked.elapsed()
     );
+}
+
+#[test]
+fn a_stalled_stream_reports_buffering_when_it_runs_dry() {
+    // The fast sink plays the 3 s at once, whatever the machine's timers do; with the read
+    // stalled, the engine must still notice the underrun and say so.
+    let engine = Engine::spawn(Box::new(CaptureSink::new(RATE))).unwrap();
+    engine
+        .handle()
+        .send(Command::Load(Source::Url(stalling_stream())));
+    wait_for(engine.events(), LONG, |e| {
+        matches!(e, EngineEvent::State(PlaybackState::Playing))
+    });
+    wait_for(engine.events(), LONG, |e| {
+        matches!(e, EngineEvent::State(PlaybackState::Buffering))
+    });
 }
