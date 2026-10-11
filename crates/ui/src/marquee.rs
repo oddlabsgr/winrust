@@ -27,12 +27,14 @@ fn is_long(text: &str) -> bool {
     text.chars().count() >= LONG
 }
 
-/// What the marquee draws: long text twice around the separator, so the loop is seamless.
+/// What the marquee draws: long text twice around the separator, so the loop is seamless;
+/// short text padded with spaces to 31 cells, so every cell comes from `text.bmp` (Webamp
+/// `loopText`).
 pub fn looped(text: &str) -> String {
     if is_long(text) {
         format!("{text}{SEPARATOR}{text}")
     } else {
-        text.to_string()
+        format!("{text:<LONG$}")
     }
 }
 

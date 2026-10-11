@@ -3,6 +3,7 @@
 
 use crate::layout::{self, Kind, Mode, Widget};
 use crate::view::{self, MainView, PlayState};
+use winrust_skin::Rect;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Pointer {
@@ -31,7 +32,9 @@ pub enum UiEvent {
     Balance(i8),
     /// Seek to this fraction of the track; sent when the seek bar is released.
     Seek(f32),
-    /// Move the window by the pointer's travel since the title bar was pressed (1× pixels).
+    /// The pointer is this far (1× pixels) from where the window was grabbed: move the window
+    /// by this much from where it is now. Positions are window-relative, so once the window
+    /// has followed, the next event reports only the new travel.
     MoveWindow {
         dx: i32,
         dy: i32,
@@ -116,6 +119,17 @@ impl Interaction {
         }
     }
 
+    /// Ends any press or drag without its usual effect: no click, no seek. Call it when the
+    /// window loses the pointer mid-drag (focus or capture loss), or a later hover would
+    /// still drive the grabbed slider. A title-text drag still ends with `DragTitleEnd`, so
+    /// the title resumes scrolling.
+    pub fn cancel(&mut self) -> Option<UiEvent> {
+        match std::mem::take(&mut self.grab) {
+            Grab::Title { .. } => Some(UiEvent::DragTitleEnd),
+            _ => None,
+        }
+    }
+
     /// Whether a title button (options, minimize, shade, close) has been pressed yet. Until
     /// then the title bar shows through it (Webamp `ClickedDiv.tsx`).
     pub fn title_button_clicked(&self, widget: Widget) -> bool {
@@ -134,7 +148,14 @@ impl Interaction {
         view: &MainView,
     ) -> Option<UiEvent> {
         self.grab = Grab::None;
-        let widget = layout::hit_test(mode, x, y)?;
+        let Some(widget) = layout::hit_test(mode, x, y) else {
+            // Winamp moves the main window from any spot that is not a control.
+            let (w, h) = mode.size();
+            if layout::contains(Rect::new(0, 0, w, h), x, y) {
+                self.grab = Grab::Window { x, y };
+            }
+            return None;
+        };
         if double && widget == Widget::TitleBar {
             return Some(UiEvent::ToggleShade);
         }

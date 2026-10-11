@@ -27,9 +27,9 @@ fn track_titles_read_like_winamps() {
 #[test]
 fn long_text_loops_with_a_separator() {
     assert_eq!(marquee::looped(LONG), format!("{LONG}  ***  {LONG}"));
-    // 30 characters fit the 154-pixel marquee.
+    // 30 characters fit the 154-pixel marquee; it still draws 31 cells.
     let fits = "x".repeat(30);
-    assert_eq!(marquee::looped(&fits), fits);
+    assert_eq!(marquee::looped(&fits), format!("{fits} "));
 }
 
 #[test]
@@ -111,4 +111,11 @@ fn messages_replace_the_text_for_three_seconds() {
     m.tick(ms(1));
     assert_eq!(m.text(), LONG);
     assert_eq!(m.offset(), 0);
+}
+
+#[test]
+fn short_text_is_padded_to_31_cells() {
+    // Webamp pads to 31 characters, so the whole marquee is drawn from text.bmp.
+    assert_eq!(marquee::looped("abc"), format!("abc{}", " ".repeat(28)));
+    assert_eq!(marquee::looped(""), " ".repeat(31));
 }

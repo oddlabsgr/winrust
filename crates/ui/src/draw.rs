@@ -64,6 +64,11 @@ pub fn draw_main_shade(skin: &Skin, view: &MainView, ui: &Interaction, out: &mut
     if let Some(vis) = view.vis.as_ref().filter(|v| (v.width, v.height) == (38, 5)) {
         out.blit(vis, Rect::new(0, 0, 38, 5), 79, 5);
     }
+    // Webamp draws five spaces under the mini time, so empty cells show text.bmp too.
+    let cells = [1, 7, 12, 20, 25];
+    for left in cells {
+        glyph(out, skin, ' ', 127 + left, 4, Rect::new(0, 0, 275, 14));
+    }
     if time_shown(view) {
         let t = view::time_digits(view.elapsed, view.duration, view.time_mode);
         let digit = |i: usize| char::from(b'0' + t.digits[i]);
@@ -74,7 +79,7 @@ pub fn draw_main_shade(skin: &Skin, view: &MainView, ui: &Interaction, out: &mut
             digit(2),
             digit(3),
         ];
-        for (c, left) in chars.into_iter().zip([1, 7, 12, 20, 25]) {
+        for (c, left) in chars.into_iter().zip(cells) {
             glyph(out, skin, c, 127 + left, 4, Rect::new(0, 0, 275, 14));
         }
     }
@@ -275,9 +280,16 @@ fn title_text(skin: &Skin, view: &MainView, ui: &Interaction, out: &mut Image) {
         Some((Widget::Volume, _)) => (view::volume_text(view.volume), 0),
         Some((Widget::Balance, _)) => (view::balance_text(view.balance), 0),
         Some((Widget::Seek, f)) => (view::seek_text(f, view.duration.unwrap_or_default()), 0),
-        _ => (marquee::looped(&view.title), view.title_offset),
+        _ => (view.title.clone(), view.title_offset),
     };
-    text(out, skin, &s, 111 - offset as i32, 27, clip);
+    text(
+        out,
+        skin,
+        &marquee::looped(&s),
+        111 - offset as i32,
+        27,
+        clip,
+    );
 }
 
 /// Bitrate, sample rate and mono/stereo; all unlit while stopped.
@@ -332,10 +344,12 @@ fn sliders(skin: &Skin, view: &MainView, ui: &Interaction, out: &mut Image) {
             continue;
         };
         let bg = skin.sprite(background);
-        let from = Rect::new(bg.rect.x, bg.rect.y + 15 * frame, track.w, 13);
+        // The background keeps its sprite's width; the volume track is 3 pixels shorter.
+        let from = Rect::new(bg.rect.x, bg.rect.y + 15 * frame, bg.rect.w, 13);
         out.blit(bg.image, from, track.x, track.y);
         let thumb = thumbs[usize::from(dragging(widget))];
-        let x = track.x + view::thumb_offset(track.w, 14, fraction);
+        let width = layout::thumb_width(Mode::Normal, widget);
+        let x = track.x + view::thumb_offset(track.w, width, fraction);
         put(out, skin.sprite(thumb), x, track.y + 1);
     }
 }

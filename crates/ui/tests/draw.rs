@@ -228,15 +228,15 @@ fn sliders_show_their_frame_and_thumb() {
         ..playing()
     };
     let img = draw::render(&skin, &view, &Interaction::new());
-    // Volume 50 is frame 13; its thumb sits 27 pixels along.
+    // Volume 50 is frame 13; its thumb sits 26 pixels along the 51-pixel travel.
     let vol = skin.sprite(S::MainVolumeBackground);
     for dx in 0..68 {
         let frame_px = vol.image.get(vol.rect.x + dx, vol.rect.y + 15 * 13 + 5);
-        if !(27..41).contains(&dx) {
+        if !(26..40).contains(&dx) {
             assert_eq!(img.get(107 + dx, 62), frame_px, "volume x {dx}");
         }
     }
-    assert!(shows(&img, 107 + 27, 58, &skin, S::MainVolumeThumb));
+    assert!(shows(&img, 107 + 26, 58, &skin, S::MainVolumeThumb));
     // Balance -50 is frame 13 too; its thumb sits 6 pixels along.
     let bal = skin.sprite(S::MainBalanceBackground);
     assert_eq!(
@@ -260,7 +260,7 @@ fn dragging_a_slider_shows_its_value_in_the_title() {
         &view,
     );
     let img = draw::render(&skin, &view, &ui);
-    assert!(shows(&img, 107 + 27, 58, &skin, S::MainVolumeThumbSelected));
+    assert!(shows(&img, 107 + 26, 58, &skin, S::MainVolumeThumbSelected));
     for (i, c) in "Volume: 50%".chars().enumerate() {
         assert!(shows_glyph(&img, 111 + 5 * i as u32, 27, &skin, c), "{c}");
     }
@@ -431,4 +431,50 @@ fn tiny_sheets_draw_black_or_base_pixels() {
     // and comes from the base skin.
     assert_eq!(img.get(16, 88), 0xFF00_FF00);
     assert!(shows(&img, 39, 88, &Skin::base(), S::MainPlayButton));
+}
+
+#[test]
+fn volume_thumb_stops_where_webamps_does() {
+    // Webamp's volume input is 65 pixels wide on a 68-pixel background: at 100% the thumb
+    // ends 3 pixels short of the background's right edge.
+    let skin = Skin::debug();
+    let view = MainView {
+        volume: 100,
+        ..playing()
+    };
+    let img = draw::render(&skin, &view, &Interaction::new());
+    assert!(shows(&img, 107 + 51, 58, &skin, S::MainVolumeThumb));
+    let vol = skin.sprite(S::MainVolumeBackground);
+    for dx in 65..68 {
+        let frame_px = vol.image.get(vol.rect.x + dx, vol.rect.y + 15 * 27 + 5);
+        assert_eq!(img.get(107 + dx, 62), frame_px, "x {dx}");
+    }
+}
+
+#[test]
+fn empty_text_cells_show_text_bmp_spaces() {
+    // Webamp draws all 31 marquee cells and all 5 mini-time cells from text.bmp, with
+    // spaces where there is no text.
+    let skin = Skin::debug();
+    let img = draw::render(&skin, &playing(), &Interaction::new());
+    for i in 24..30 {
+        assert!(shows_glyph(&img, 111 + 5 * i, 27, &skin, ' '), "cell {i}");
+    }
+    for view in [
+        MainView {
+            shade: true,
+            ..MainView::default()
+        },
+        MainView {
+            shade: true,
+            state: PlayState::Paused,
+            blink_hidden: true,
+            ..playing()
+        },
+    ] {
+        let img = draw::render(&skin, &view, &Interaction::new());
+        for x in [128, 134, 139, 147, 152] {
+            assert!(shows_glyph(&img, x, 4, &skin, ' '), "mini time x {x}");
+        }
+    }
 }

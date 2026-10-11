@@ -6,7 +6,8 @@ fn widgets_sit_at_webamps_positions() {
     let cases = [
         (Mode::Normal, Widget::Close, Rect::new(264, 3, 9, 9)),
         (Mode::Normal, Widget::Time, Rect::new(39, 26, 59, 13)),
-        (Mode::Normal, Widget::Volume, Rect::new(107, 57, 68, 13)),
+        // Webamp's volume input is 3 pixels shorter than its 68-pixel background.
+        (Mode::Normal, Widget::Volume, Rect::new(107, 57, 65, 13)),
         (Mode::Normal, Widget::Next, Rect::new(108, 88, 22, 18)),
         (Mode::Normal, Widget::Eject, Rect::new(136, 89, 22, 16)),
         (Mode::Shade, Widget::Seek, Rect::new(226, 4, 17, 7)),

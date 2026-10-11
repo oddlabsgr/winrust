@@ -57,24 +57,28 @@ fn leaving_a_held_button_releases_it_until_the_pointer_returns() {
 }
 
 #[test]
-fn pressing_nothing_does_nothing() {
+fn dragging_blank_body_moves_the_window() {
+    // Winamp moves the main window from any spot that is not a control.
     let v = MainView::default();
     let mut ui = Interaction::new();
     assert_eq!(ui.pointer(down(132, 95), &v), None);
-    assert_eq!(ui.pointer(mv(50, 95), &v), None);
-    assert_eq!(ui.pointer(up(50, 95), &v), None);
     assert_eq!(ui.pressed(), None);
+    assert_eq!(
+        ui.pointer(mv(140, 100), &v),
+        Some(UiEvent::MoveWindow { dx: 8, dy: 5 })
+    );
+    assert_eq!(ui.pointer(up(140, 100), &v), None);
 }
 
 #[test]
 fn pressing_the_volume_track_jumps_then_drags() {
-    // Volume 50 puts the 14-pixel thumb at x 134-147 of the track at 107.
+    // Volume 50 puts the 14-pixel thumb at x 133-146 of the 65-pixel track at 107.
     let v = playing();
     let mut ui = Interaction::new();
-    // The thumb's centre jumps to the pointer: (117 - 7 - 107) / 54 = 0.056.
+    // The thumb's centre jumps to the pointer: (117 - 7 - 107) / 51 = 0.059.
     assert_eq!(ui.pointer(down(117, 63), &v), Some(UiEvent::Volume(6)));
     assert_eq!(ui.sliding().map(|(w, _)| w), Some(Widget::Volume));
-    assert_eq!(ui.pointer(mv(161, 63), &v), Some(UiEvent::Volume(87)));
+    assert_eq!(ui.pointer(mv(161, 63), &v), Some(UiEvent::Volume(92)));
     assert_eq!(ui.pointer(mv(161, 70), &v), None);
     assert_eq!(ui.pointer(mv(300, 63), &v), Some(UiEvent::Volume(100)));
     assert_eq!(ui.pointer(up(300, 63), &v), None);
@@ -85,11 +89,11 @@ fn pressing_the_volume_track_jumps_then_drags() {
 fn grabbing_the_thumb_keeps_the_grab_offset() {
     let v = playing();
     let mut ui = Interaction::new();
-    // 2 pixels into the thumb at 134: nothing changes yet.
+    // 3 pixels into the thumb at 133: nothing changes yet.
     assert_eq!(ui.pointer(down(136, 63), &v), None);
-    // The thumb follows the pointer, still 2 pixels in: (144 - 107) / 54 = 0.685.
-    assert_eq!(ui.pointer(mv(146, 63), &v), Some(UiEvent::Volume(69)));
-    assert_eq!(ui.pointer(mv(136, 63), &v), Some(UiEvent::Volume(50)));
+    // The thumb follows the pointer, still 3 pixels in: (143 - 107) / 51 = 0.706.
+    assert_eq!(ui.pointer(mv(146, 63), &v), Some(UiEvent::Volume(71)));
+    assert_eq!(ui.pointer(mv(136, 63), &v), Some(UiEvent::Volume(51)));
 }
 
 #[test]
@@ -222,4 +226,44 @@ fn drags_far_outside_the_window_clamp() {
             dy: 99_995
         })
     );
+}
+
+#[test]
+fn window_drag_reports_the_offset_from_the_grab_point() {
+    // Pointer positions are window-relative: once the window has followed a move, the
+    // next event reports only the new travel.
+    let v = MainView::default();
+    let mut ui = Interaction::new();
+    ui.pointer(down(100, 5), &v);
+    assert_eq!(
+        ui.pointer(mv(110, 5), &v),
+        Some(UiEvent::MoveWindow { dx: 10, dy: 0 })
+    );
+    assert_eq!(
+        ui.pointer(mv(101, 5), &v),
+        Some(UiEvent::MoveWindow { dx: 1, dy: 0 })
+    );
+}
+
+#[test]
+fn cancel_ends_any_grab_without_its_effect() {
+    let v = playing();
+    let mut ui = Interaction::new();
+    // A volume drag whose button-up never arrives must not follow the pointer afterwards.
+    ui.pointer(down(117, 63), &v);
+    assert_eq!(ui.cancel(), None);
+    assert_eq!(ui.sliding(), None);
+    assert_eq!(ui.pointer(mv(160, 63), &v), None);
+    // A cancelled button press does not click; a cancelled seek does not seek.
+    ui.pointer(down(50, 95), &v);
+    assert_eq!(ui.cancel(), None);
+    assert_eq!(ui.pressed(), None);
+    assert_eq!(ui.pointer(up(50, 95), &v), None);
+    ui.pointer(down(150, 76), &v);
+    assert_eq!(ui.cancel(), None);
+    assert_eq!(ui.pointer(up(150, 76), &v), None);
+    // A title-text drag still ends, so the title resumes scrolling.
+    ui.pointer(down(150, 28), &v);
+    assert_eq!(ui.cancel(), Some(UiEvent::DragTitleEnd));
+    assert_eq!(ui.cancel(), None);
 }

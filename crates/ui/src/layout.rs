@@ -91,7 +91,8 @@ const NORMAL: [(Widget, Rect); 27] = [
     (Widget::Time, r(39, 26, 59, 13)),
     (Widget::Vis, r(24, 43, 76, 16)),
     (Widget::Marquee, r(111, 24, 154, 12)),
-    (Widget::Volume, r(107, 57, 68, 13)),
+    // The volume input is 3 pixels shorter than its 68-pixel background (Webamp).
+    (Widget::Volume, r(107, 57, 65, 13)),
     (Widget::Balance, r(177, 57, 38, 13)),
     (Widget::Eq, r(219, 58, 23, 12)),
     (Widget::Playlist, r(242, 58, 23, 12)),
