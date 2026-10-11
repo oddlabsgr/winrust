@@ -10,6 +10,7 @@ Usage: cargo xtask <task>
 Tasks:
   help           Show this message
   gen-fixtures   Regenerate audio test fixtures (needs ffmpeg on PATH)
+  gen-skin       Regenerate the Winrust Base skin in assets/skin
 ";
 
 fn main() -> ExitCode {
@@ -20,6 +21,7 @@ fn main() -> ExitCode {
             Ok(())
         }
         Some("gen-fixtures") => gen_fixtures(),
+        Some("gen-skin") => gen_skin(),
         Some(other) => Err(format!("unknown task: {other}\n\n{HELP}")),
     };
     match result {
@@ -72,6 +74,15 @@ fn gen_fixtures() -> Result<(), String> {
         )?;
     }
     println!("fixtures written to {}", out.display());
+    Ok(())
+}
+
+/// Draws Winrust Base and writes it to `assets/skin/` (committed; see spec §7.6).
+fn gen_skin() -> Result<(), String> {
+    let out = workspace_root().join("assets/skin");
+    let count =
+        xtask::gen_skin::write(&out).map_err(|e| format!("write {}: {e}", out.display()))?;
+    println!("{count} skin files written to {}", out.display());
     Ok(())
 }
 

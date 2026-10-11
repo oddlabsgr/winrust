@@ -1,0 +1,24 @@
+0,0,0, // background
+24,33,41, // grid dots
+239,49,16, // spectrum, top to bottom
+206,41,16, // spectrum, top to bottom
+214,90,0, // spectrum, top to bottom
+214,102,0, // spectrum, top to bottom
+214,115,0, // spectrum, top to bottom
+198,123,8, // spectrum, top to bottom
+222,165,24, // spectrum, top to bottom
+214,181,33, // spectrum, top to bottom
+189,222,41, // spectrum, top to bottom
+148,222,33, // spectrum, top to bottom
+41,206,16, // spectrum, top to bottom
+50,190,16, // spectrum, top to bottom
+57,181,16, // spectrum, top to bottom
+49,156,8, // spectrum, top to bottom
+41,148,0, // spectrum, top to bottom
+24,132,8, // spectrum, top to bottom
+255,255,255, // oscilloscope
+214,214,222, // oscilloscope
+181,189,189, // oscilloscope
+160,170,175, // oscilloscope
+148,156,165, // oscilloscope
+150,150,150, // peak dots
