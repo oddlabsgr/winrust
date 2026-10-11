@@ -46,12 +46,16 @@ their AAC-LC core only, at reduced quality.
 
 ## Checking skins
 
-The skin engine can lay out every sprite of a skin on one image, for comparing against
-[Webamp](https://webamp.org):
+The skin engine can lay out every sprite of a skin on one image, or draw the main window
+with it, for comparing against [Webamp](https://webamp.org):
 
 ```sh
-cargo run -p winrust-skin --example skin-tool -- contact path/to/skin.wsz sheet.png
+cargo run -p winrust-ui --example skin-tool -- contact path/to/skin.wsz sheet.png
+cargo run -p winrust-ui --example skin-tool -- render path/to/skin.wsz playing main.png
 ```
+
+`render` takes a state (`stopped`, `playing`, `paused`, `buffering` or `shade`), and `base`
+in place of a skin draws Winrust Base.
 
 To load a whole folder of skins and write a contact sheet for each (no skins are committed;
 they belong to their authors):
