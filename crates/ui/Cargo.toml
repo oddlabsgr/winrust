@@ -1,0 +1,10 @@
+[package]
+name = "winrust-ui"
+description = "Winrust main window without windowing: layout, interaction, compositor, visualizer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+winrust-skin = { path = "../skin" }
