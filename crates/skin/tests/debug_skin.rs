@@ -62,3 +62,24 @@ fn debug_skin_is_complete() {
 fn base_is_shared() {
     assert!(Arc::ptr_eq(&Skin::base(), &Skin::base()));
 }
+
+#[test]
+fn volume_and_balance_frames_are_told_apart() {
+    // Each of the 28 frames carries a stripe as wide as its index + 1, so a wrong frame
+    // shows in golden images.
+    let skin = Skin::debug();
+    for id in [
+        SpriteId::MainVolumeBackground,
+        SpriteId::MainBalanceBackground,
+    ] {
+        let s = skin.sprite(id);
+        let frames: HashSet<Vec<u32>> = (0..28)
+            .map(|i| {
+                (0..s.rect.w)
+                    .map(|dx| s.image.get(s.rect.x + dx, s.rect.y + 15 * i + 6))
+                    .collect()
+            })
+            .collect();
+        assert_eq!(frames.len(), 28, "{id:?}");
+    }
+}

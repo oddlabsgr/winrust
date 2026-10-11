@@ -317,3 +317,26 @@ fn archive_contents_are_capped_at_64_mib() {
         skin.warnings
     );
 }
+
+#[test]
+fn own_sprite_query_ignores_the_base_skin() {
+    // A 30×20 titlebar.bmp reaches MAIN_TITLE_BAR (27,15) but not MAIN_SHADE_BACKGROUND (27,42).
+    let skin = Skin::from_zip_bytes(&zip(&[("titlebar.bmp", &solid_bmp(30, 20, GREEN))])).unwrap();
+    assert!(skin.has_own_sprite(SpriteId::MainTitleBar));
+    assert!(!skin.has_own_sprite(SpriteId::MainShadeBackground));
+    assert!(!skin.has_own_sprite(SpriteId::MainPlayButton));
+    assert!(Skin::debug().has_own_sprite(SpriteId::EqMaximizeButtonActive));
+}
+
+#[test]
+fn glyphs_come_from_the_skins_text_bmp_or_the_base_skin() {
+    let skin = Skin::from_zip_bytes(&zip(&[("text.bmp", &solid_bmp(155, 18, RED))])).unwrap();
+    let g = skin.glyph('A');
+    assert_eq!(g.rect, winrust_skin::text::glyph('A'));
+    assert_eq!(g.image.get(g.rect.x, g.rect.y), RED);
+    let other = Skin::from_zip_bytes(&zip(&[("main.bmp", &solid_bmp(275, 116, RED))])).unwrap();
+    assert!(std::ptr::eq(
+        other.glyph('A').image,
+        Skin::base().sheet(Sheet::Text)
+    ));
+}

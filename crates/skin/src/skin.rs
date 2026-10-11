@@ -43,6 +43,13 @@ struct SheetImage {
     height: u32,
 }
 
+impl SheetImage {
+    /// Whether the decoded bitmap reaches the rectangle's top-left corner.
+    fn reaches(&self, r: Rect) -> bool {
+        r.x < self.width && r.y < self.height
+    }
+}
+
 /// Where to blit a sprite from.
 #[derive(Clone, Copy, Debug)]
 pub struct SpriteRef<'a> {
@@ -165,7 +172,7 @@ impl Skin {
     pub fn sprite(&self, id: SpriteId) -> SpriteRef<'_> {
         let def = id.def();
         match &self.sheets[def.sheet as usize] {
-            Some(s) if def.rect.x < s.width && def.rect.y < s.height => SpriteRef {
+            Some(s) if s.reaches(def.rect) => SpriteRef {
                 image: &s.image,
                 rect: def.rect,
             },
@@ -174,6 +181,22 @@ impl Skin {
                 .as_ref()
                 .expect("only complete skins have no fallback")
                 .sprite(id),
+        }
+    }
+
+    /// Whether this skin's own sheet reaches the sprite, without the base skin's help.
+    pub fn has_own_sprite(&self, id: SpriteId) -> bool {
+        let def = id.def();
+        self.sheets[def.sheet as usize]
+            .as_ref()
+            .is_some_and(|s| s.reaches(def.rect))
+    }
+
+    /// The `text.bmp` cell for `c` (see [`crate::text::glyph`]).
+    pub fn glyph(&self, c: char) -> SpriteRef<'_> {
+        SpriteRef {
+            image: self.sheet(Sheet::Text),
+            rect: crate::text::glyph(c),
         }
     }
 

@@ -1,16 +1,20 @@
 //! The debug skin: every sprite a flat colour of its own, so a wrong sprite or offset is
 //! obvious in golden images. Sprites are painted in table order, so where sprites overlap
-//! the later one shows. Each `text.bmp` cell gets a colour too.
+//! the later one shows. Each `text.bmp` cell gets a colour too, and each volume and balance
+//! frame a white stripe as wide as its index + 1.
 
 use crate::bmp;
 use crate::image::{Image, Rect};
 use crate::skin::Skin;
-use crate::sprites::{SPRITES, Sheet};
+use crate::sprites::{SPRITES, Sheet, SpriteId};
 use crate::text::{GLYPH_H, GLYPH_W};
 use std::io::{Cursor, Write};
 
 /// Sheet pixels no sprite covers.
 pub const BACKGROUND: u32 = 0xFF20_2020;
+
+/// Marks the frames of the volume and balance sliders (no sprite colour is white).
+pub const FRAME_STRIPE: u32 = 0xFFFF_FFFF;
 
 /// Colour of sprite `index` in table order; `text.bmp` cell (row, col) is
 /// `SPRITES.len() + row * 31 + col`. Unique for the first 288 indices, and never dark.
@@ -33,6 +37,16 @@ pub fn sheets() -> Vec<Image> {
         .collect();
     for (i, def) in SPRITES.iter().enumerate() {
         sheets[def.sheet as usize].fill_rect(def.rect, color(i));
+    }
+    for id in [
+        SpriteId::MainVolumeBackground,
+        SpriteId::MainBalanceBackground,
+    ] {
+        let def = id.def();
+        for i in 0..28 {
+            let stripe = Rect::new(def.rect.x, def.rect.y + 15 * i, i + 1, 13);
+            sheets[def.sheet as usize].fill_rect(stripe, FRAME_STRIPE);
+        }
     }
     let text = &mut sheets[Sheet::Text as usize];
     for row in 0..3 {
