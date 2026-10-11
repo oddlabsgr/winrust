@@ -1,5 +1,5 @@
 use winrust_skin::{Image, Rect, Sheet, SpriteId as S, text};
-use xtask::gen_skin::palette::{LCD_BG, LCD_DIM, LCD_ON, RUST};
+use xtask::gen_skin::palette::{BEVEL_LIGHT, LCD_BG, LCD_DIM, LCD_ON, RUST, SHADOW};
 use xtask::gen_skin::{font, sheets::lcd};
 
 fn pixels(img: &Image, r: Rect) -> Vec<u32> {
@@ -100,4 +100,29 @@ fn indicators_show_play_state_and_work() {
     assert!(lit(&p, Rect::new(idle.x, idle.y, 3, 9)) > 0);
     let busy = S::MainWorkingIndicator.def().rect;
     assert!(pixels(&p, Rect::new(busy.x, busy.y, 3, 9)).contains(&RUST));
+}
+
+#[test]
+fn mono_and_stereo_cells_form_one_panel() {
+    // In the window MONO (x 212) sits left of STEREO (x 239): one panel, bevelled outside only.
+    let m = lcd::monoster();
+    for id in [
+        S::MainMono,
+        S::MainMonoSelected,
+        S::MainStereo,
+        S::MainStereoSelected,
+    ] {
+        let b = id.def().rect;
+        let left: Vec<u32> = (1..b.h - 1).map(|y| m.get(b.x, b.y + y)).collect();
+        let right: Vec<u32> = (1..b.h - 1)
+            .map(|y| m.get(b.x + b.w - 1, b.y + y))
+            .collect();
+        if matches!(id, S::MainMono | S::MainMonoSelected) {
+            assert!(left.iter().all(|&p| p == SHADOW), "{id:?}");
+            assert!(!right.contains(&BEVEL_LIGHT), "{id:?}");
+        } else {
+            assert!(!left.contains(&SHADOW), "{id:?}");
+            assert!(right.iter().all(|&p| p == BEVEL_LIGHT), "{id:?}");
+        }
+    }
 }

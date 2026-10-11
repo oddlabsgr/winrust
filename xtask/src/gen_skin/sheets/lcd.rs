@@ -92,6 +92,10 @@ pub fn monoster() -> Image {
     for (id, word, c) in cells {
         let b = r(id);
         lcd(&mut img, b);
+        // In the window MONO sits left of STEREO: one panel, bevelled outside only.
+        let mono = matches!(id, S::MainMono | S::MainMonoSelected);
+        let inner = if mono { b.x + b.w - 1 } else { b.x };
+        vline(&mut img, inner, b.y + 1, b.h - 2, LCD_BG);
         text_centered(&mut img, b, word, c);
     }
     img

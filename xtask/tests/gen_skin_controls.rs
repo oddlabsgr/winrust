@@ -1,5 +1,7 @@
 use winrust_skin::{Image, Rect, Sheet, SpriteId as S};
-use xtask::gen_skin::palette::{BEVEL_LIGHT, GROOVE, INK, LCD_BG, LCD_ON, RUST, SHADOW};
+use xtask::gen_skin::palette::{
+    BEVEL_DARK, BEVEL_LIGHT, GROOVE, INK, LCD_BG, LCD_ON, RUST, SHADOW,
+};
 use xtask::gen_skin::sheets::controls;
 
 fn pixels(img: &Image, r: Rect) -> Vec<u32> {
@@ -137,5 +139,26 @@ fn toggles_light_up_when_selected() {
     ] {
         assert!(has(&img, on, LCD_ON), "{on:?}");
         assert!(!has(&img, off, LCD_ON), "{off:?}");
+    }
+}
+
+#[test]
+fn next_button_shows_its_edge_within_22_pixels() {
+    // Webamp shows MAIN_NEXT_BUTTON 22 pixels wide, so its dark right edge is column 21.
+    let img = controls::cbuttons();
+    let b = S::MainNextButton.def().rect;
+    for dy in 1..b.h - 1 {
+        assert_eq!(img.get(b.x + 21, b.y + dy), BEVEL_DARK, "row {dy}");
+    }
+}
+
+#[test]
+fn shade_bars_share_a_dark_seam() {
+    // MAIN_SHADE_BACKGROUND_SELECTED (y 29) and MAIN_SHADE_BACKGROUND (y 42) share row 42: the
+    // selected bar's dark bottom edge, with the other bar's light edge just below it.
+    let img = controls::titlebar();
+    for x in [27 + 120, 27 + 235] {
+        assert_eq!(img.get(x, 42), BEVEL_DARK, "x {x}");
+        assert_eq!(img.get(x, 43), BEVEL_LIGHT, "x {x}");
     }
 }

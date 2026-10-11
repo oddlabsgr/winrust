@@ -53,9 +53,9 @@ pub fn main() -> Image {
     label(&mut img, 130, 43, "KBPS", INK_DIM);
     lcd(&mut img, rect(154, 41, 14, 10));
     label(&mut img, 170, 43, "KHZ", INK_DIM);
-    // Grooves between the display, the seek bar and the buttons.
-    hline(&mut img, 10, 67, 255, SHADOW);
-    hline(&mut img, 10, 68, 255, BEVEL_LIGHT);
+    // Grooves between the sliders, the seek bar and the buttons.
+    hline(&mut img, 10, 70, 255, SHADOW);
+    hline(&mut img, 10, 71, 255, BEVEL_LIGHT);
     hline(&mut img, 10, 84, 255, SHADOW);
     hline(&mut img, 10, 85, 255, BEVEL_LIGHT);
     // Logo plate.
@@ -221,8 +221,9 @@ pub fn eq_ex() -> Image {
         frame(&mut img, b, INK, SHADOW);
     }
     let buttons: [(S, bool, &[&str]); 4] = [
-        (S::EqMaximizeButtonActive, true, &icons::UNSHADE),
-        (S::EqMinimizeButtonActive, true, &icons::SHADE),
+        // Pressed shade button of the normal EQ, then of the shaded EQ.
+        (S::EqMaximizeButtonActive, true, &icons::SHADE),
+        (S::EqMinimizeButtonActive, true, &icons::UNSHADE),
         (S::EqShadeCloseButton, false, &icons::CLOSE),
         (S::EqShadeCloseButtonActive, true, &icons::CLOSE),
     ];
@@ -310,7 +311,8 @@ pub fn pledit() -> Image {
                 raised(&mut img, k);
                 bitmap_centered(&mut img, k, icon, if active { INK } else { INK_DIM });
             }
-            title_stripes(&mut img, b.x + 2, b.y + 4, 24, active);
+            // Webamp's shade time covers x 0-19; the stripes fill the gap up to the buttons.
+            title_stripes(&mut img, b.x + 20, b.y + 4, 8, active);
         }
     }
 
@@ -365,7 +367,8 @@ pub fn pledit() -> Image {
     }
     let vis = r(S::PlaylistVisualizerBackground);
     bottom_body(&mut img, vis);
-    lcd(&mut img, rect(vis.x + 2, vis.y + 11, 72, 18));
+    // Webamp draws the playlist visualizer 72×16 at (2, 12); the panel frames it.
+    lcd(&mut img, rect(vis.x + 1, vis.y + 11, 74, 18));
 
     // Popup menus.
     let items: [(S, S, &[&str]); 16] = [

@@ -1,6 +1,9 @@
 use winrust_skin::sprites::SPRITES;
 use winrust_skin::{Image, Rect, Sheet, SpriteId as S};
-use xtask::gen_skin::palette::{INK, LCD_BG, LCD_ON, SHADOW};
+use xtask::gen_skin::icons;
+use xtask::gen_skin::palette::{
+    BEVEL_LIGHT, COPPER, INK, LCD_BG, LCD_ON, RUST, SHADOW, STRIPE_IDLE,
+};
 use xtask::gen_skin::sheets::{self, windows};
 
 fn pixels(img: &Image, r: Rect) -> Vec<u32> {
@@ -116,5 +119,76 @@ fn playlist_menu_items_have_two_states() {
             pixels(&pl, down.def().rect),
             "{up:?}"
         );
+    }
+}
+
+#[test]
+fn slider_groove_runs_below_the_sliders() {
+    // Volume, balance and the EQ/PL buttons cover rows 57-69; a groove above row 70 would
+    // peek out between them.
+    let main = windows::main();
+    for x in [176, 216] {
+        for y in [67, 68] {
+            assert!(
+                ![SHADOW, BEVEL_LIGHT].contains(&main.get(x, y)),
+                "({x},{y})"
+            );
+        }
+        assert_eq!(main.get(x, 70), SHADOW);
+        assert_eq!(main.get(x, 71), BEVEL_LIGHT);
+    }
+}
+
+#[test]
+fn playlist_visualizer_panel_frames_webamps_72_pixels() {
+    // Webamp draws the playlist visualizer 72×16 at (2, 12) of this piece.
+    let pl = windows::pledit();
+    let v = S::PlaylistVisualizerBackground.def().rect;
+    let vis = Rect::new(v.x + 2, v.y + 12, 72, 16);
+    assert!(pixels(&pl, vis).iter().all(|&p| p == LCD_BG));
+    assert_eq!(pl.get(v.x + 1, v.y + 20), SHADOW);
+    assert_eq!(pl.get(v.x + 74, v.y + 20), BEVEL_LIGHT);
+}
+
+#[test]
+fn playlist_shade_stripes_sit_where_they_show() {
+    // Webamp's shade time covers this piece up to x = 19; the stripes fill the gap from
+    // x = 20 to the buttons at x = 29.
+    let pl = windows::pledit();
+    for id in [
+        S::PlaylistShadeBackgroundRight,
+        S::PlaylistShadeBackgroundRightSelected,
+    ] {
+        let b = id.def().rect;
+        let hidden = pixels(&pl, Rect::new(b.x, b.y + 4, 20, 6));
+        assert!(
+            !hidden.contains(&RUST) && !hidden.contains(&STRIPE_IDLE),
+            "{id:?}"
+        );
+        let shown = pixels(&pl, Rect::new(b.x + 20, b.y + 4, 8, 6));
+        assert!(
+            shown.contains(&RUST) || shown.contains(&STRIPE_IDLE),
+            "{id:?}"
+        );
+    }
+}
+
+#[test]
+fn eq_shade_button_presses_keep_their_icon() {
+    // EQ_MAXIMIZE_BUTTON_ACTIVE is the pressed shade button of the normal EQ (whose title bar
+    // shows SHADE); EQ_MINIMIZE_BUTTON_ACTIVE the pressed one of the shaded EQ (UNSHADE).
+    let ex = windows::eq_ex();
+    for (id, icon) in [
+        (S::EqMaximizeButtonActive, icons::SHADE),
+        (S::EqMinimizeButtonActive, icons::UNSHADE),
+    ] {
+        let b = id.def().rect;
+        for (dy, row) in icon.iter().enumerate() {
+            for (dx, ch) in row.chars().enumerate() {
+                // A 5×5 icon centred in 9×9, shifted one pixel when pressed.
+                let p = ex.get(b.x + 3 + dx as u32, b.y + 3 + dy as u32);
+                assert_eq!(p == COPPER, ch == '#', "{id:?} at {dx},{dy}");
+            }
+        }
     }
 }

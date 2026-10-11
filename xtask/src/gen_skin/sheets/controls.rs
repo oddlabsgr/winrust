@@ -58,7 +58,12 @@ pub fn cbuttons() -> Image {
     ];
     for (up, down, kind) in pairs {
         for (id, is_down) in [(up, false), (down, true)] {
-            button(&mut img, r(id), is_down, |img, b, c| {
+            let mut b = r(id);
+            // Webamp shows MAIN_NEXT_BUTTON 22 pixels wide, like its pressed state.
+            if id == S::MainNextButton {
+                b.w = 22;
+            }
+            button(&mut img, b, is_down, |img, b, c| {
                 icons::transport(img, kind, b, 7, c)
             });
         }
@@ -169,14 +174,19 @@ pub fn titlebar() -> Image {
         text_centered(&mut img, b, l, COPPER);
     }
 
-    // Shade mode bar: mini visualizer, mini time, mini transport, seek groove.
+    // Shade mode bar: mini visualizer, mini time, mini transport, seek groove. The two bars
+    // share row 42: the selected bar (drawn last) owns it as its dark bottom edge, and the
+    // other bar's light edge moves one row down.
     for (id, active) in [
-        (S::MainShadeBackgroundSelected, true),
         (S::MainShadeBackground, false),
+        (S::MainShadeBackgroundSelected, true),
     ] {
         let b = r(id);
         vgradient(&mut img, b, BODY_TOP, BODY_BOTTOM);
         frame(&mut img, b, BEVEL_LIGHT, BEVEL_DARK);
+        if !active {
+            hline(&mut img, b.x + 1, b.y + 1, b.w - 2, BEVEL_LIGHT);
+        }
         title_stripes(&mut img, b.x + 18, b.y + 4, 56, active);
         lcd(&mut img, rect(b.x + 78, b.y + 3, 40, 8));
         lcd(&mut img, rect(b.x + 126, b.y + 2, 32, 10));
