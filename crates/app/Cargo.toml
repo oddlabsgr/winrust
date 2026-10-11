@@ -6,4 +6,12 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[lib]
+name = "winrust_app"
+path = "src/lib.rs"
+
 [dependencies]
+winrust-audio = { path = "../audio" }
+
+[dev-dependencies]
+tempfile = "3"

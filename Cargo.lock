@@ -1908,6 +1908,10 @@ dependencies = [
 [[package]]
 name = "winrust"
 version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "winrust-audio",
+]
 
 [[package]]
 name = "winrust-audio"
