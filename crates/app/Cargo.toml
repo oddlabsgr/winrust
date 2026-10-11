@@ -11,6 +11,8 @@ name = "winrust_app"
 path = "src/lib.rs"
 
 [dependencies]
+# Linux builds X11 only: Wayland does not let windows place themselves (umbrella spec §8.3).
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "x11"] }
 winrust-audio = { path = "../audio" }
 winrust-ui = { path = "../ui" }
 
