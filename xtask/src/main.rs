@@ -1,4 +1,5 @@
-//! Developer tasks: `cargo xtask <task>`. Dependency-free on purpose so it builds instantly.
+//! Developer tasks: `cargo xtask <task>`. The generators live in the library half (`lib.rs`)
+//! so they can be tested.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
