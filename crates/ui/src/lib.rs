@@ -2,6 +2,7 @@
 //! interaction, the compositor, the scrolling title and the visualizer. Pure: it depends on
 //! the skin engine only.
 
+pub mod draw;
 pub mod interaction;
 pub mod layout;
 pub mod marquee;
