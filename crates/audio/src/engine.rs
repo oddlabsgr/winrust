@@ -280,6 +280,7 @@ impl Worker {
         match cmd {
             Command::Load(source) => self.load(source),
             Command::QueueNext(source) => self.queue_next(source),
+            Command::Unqueue => self.queued = None,
             Command::Play => {
                 let was_paused = self.shared.paused.swap(false, Ordering::AcqRel);
                 let stopped = self.active.is_none() && self.timeline.current().is_none();

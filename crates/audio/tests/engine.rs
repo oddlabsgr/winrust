@@ -267,6 +267,26 @@ fn bad_queued_track_still_ends_current_one() {
 }
 
 #[test]
+fn unqueue_forgets_the_queued_track() {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (dir.path().join("a.wav"), dir.path().join("b.wav"));
+    write_wav(&a, RATE, 2, &sine_i16(RATE, 0, RATE as usize / 2));
+    write_wav(&b, RATE, 2, &sine_i16(RATE, 0, RATE as usize / 2));
+
+    let (engine, _) = engine(CaptureSink::realtime(RATE));
+    let h = engine.handle();
+    h.send(Command::Load(Source::File(a)));
+    h.send(Command::QueueNext(Source::File(b)));
+    h.send(Command::Unqueue);
+    let events = wait_for(engine.events(), LONG, is_ended);
+    let started = events
+        .iter()
+        .filter(|e| matches!(e, EngineEvent::TrackStarted { .. }))
+        .count();
+    assert_eq!(started, 1, "{events:#?}");
+}
+
+#[test]
 fn plays_icy_stream_with_titles() {
     let body = wav_bytes(RATE, &sine_i16(RATE, 0, 3 * RATE as usize));
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

@@ -73,6 +73,9 @@ pub enum Command {
     Load(Source),
     /// Play `Source` right after the current track ends, with no gap.
     QueueNext(Source),
+    /// Forget the `QueueNext` track, unless decoding has already reached it (the last
+    /// moments of the current track): then it plays as queued.
+    Unqueue,
     Play,
     Pause,
     Stop,
