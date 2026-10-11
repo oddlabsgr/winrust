@@ -3,6 +3,7 @@
 
 pub mod controls;
 pub mod lcd;
+pub mod windows;
 
 use super::draw::*;
 use super::palette::*;
@@ -93,4 +94,33 @@ pub fn title_bar(
         title,
         if active { COPPER } else { INK_DIM },
     );
+}
+
+pub fn body(img: &mut Image, b: Rect) {
+    vgradient(img, b, BODY_TOP, BODY_BOTTOM);
+    frame(img, b, BEVEL_LIGHT, BEVEL_DARK);
+}
+
+/// All sheets in `Sheet::ALL` order.
+pub fn all() -> Vec<Image> {
+    Sheet::ALL
+        .iter()
+        .map(|sheet| match sheet {
+            Sheet::Main => windows::main(),
+            Sheet::Cbuttons => controls::cbuttons(),
+            Sheet::Titlebar => controls::titlebar(),
+            Sheet::Numbers => lcd::numbers(),
+            Sheet::NumsEx => lcd::nums_ex(),
+            Sheet::Text => lcd::text(),
+            Sheet::Posbar => controls::posbar(),
+            Sheet::Volume => controls::volume(),
+            Sheet::Balance => controls::balance(),
+            Sheet::Monoster => lcd::monoster(),
+            Sheet::Playpaus => lcd::playpaus(),
+            Sheet::Shufrep => controls::shufrep(),
+            Sheet::Eqmain => windows::eqmain(),
+            Sheet::EqEx => windows::eq_ex(),
+            Sheet::Pledit => windows::pledit(),
+        })
+        .collect()
 }
