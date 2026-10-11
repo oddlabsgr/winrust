@@ -4,6 +4,7 @@ use common::*;
 use std::time::Duration;
 use winrust_app::model::{Action, Control, Effect, FRAME};
 use winrust_audio::{Command, EngineEvent, PlaybackState};
+use winrust_skin::Image;
 use winrust_ui::interaction::Pointer;
 use winrust_ui::layout::{self, Mode, Widget};
 use winrust_ui::view::{PlayState, TimeMode};
@@ -192,26 +193,64 @@ fn fade_stop_lowers_the_volume_over_a_second_then_stops() {
         vec![Command::SetVolume(40)]
     );
     h.advance(Duration::from_millis(500));
+    assert_eq!(commands(&h.apply(Action::Tick)), vec![Command::Stop]);
+    // The volume comes back only once playback has stopped: restored any sooner, the last
+    // of the audio would play at full volume.
     assert_eq!(
-        commands(&h.apply(Action::Tick)),
-        vec![Command::Stop, Command::SetVolume(80)]
+        commands(&h.engine(EngineEvent::State(PlaybackState::Stopped))),
+        vec![Command::SetVolume(80)]
     );
     assert_eq!(h.model.volume, 80, "the setting is kept");
 }
 
 #[test]
-fn stopping_during_a_fade_restores_the_volume() {
+fn stopping_during_a_fade_restores_the_volume_once_stopped() {
     let mut h = Harness::playing(&["a"], 60);
     h.model.volume = 80;
     h.control(Control::FadeStop);
     h.advance(Duration::from_millis(300));
     h.apply(Action::Tick);
+    assert_eq!(commands(&h.control(Control::Stop)), vec![Command::Stop]);
     assert_eq!(
-        commands(&h.control(Control::Stop)),
-        vec![Command::Stop, Command::SetVolume(80)]
+        commands(&h.engine(EngineEvent::State(PlaybackState::Stopped))),
+        vec![Command::SetVolume(80)]
     );
     h.advance(Duration::from_secs(1));
     assert_eq!(commands(&h.apply(Action::Tick)), vec![], "the fade is over");
+}
+
+#[test]
+fn pausing_during_a_fade_restores_the_volume_once_paused() {
+    let mut h = Harness::playing(&["a"], 60);
+    h.model.volume = 80;
+    h.control(Control::FadeStop);
+    h.advance(Duration::from_millis(300));
+    h.apply(Action::Tick);
+    assert_eq!(commands(&h.control(Control::Pause)), vec![Command::Pause]);
+    assert_eq!(
+        commands(&h.engine(EngineEvent::State(PlaybackState::Paused))),
+        vec![Command::SetVolume(80)]
+    );
+}
+
+#[test]
+fn a_track_ending_during_a_fade_restores_the_volume() {
+    let mut h = Harness::playing(&["a"], 60);
+    h.model.volume = 80;
+    h.control(Control::FadeStop);
+    h.advance(Duration::from_millis(300));
+    h.apply(Action::Tick);
+    h.engine(EngineEvent::TrackEnded);
+    assert_eq!(
+        commands(&h.engine(EngineEvent::State(PlaybackState::Stopped))),
+        vec![Command::SetVolume(80)]
+    );
+    h.advance(Duration::from_secs(1));
+    assert_eq!(
+        commands(&h.apply(Action::Tick)),
+        vec![],
+        "no Stop for a stopped player"
+    );
 }
 
 #[test]
@@ -314,4 +353,35 @@ fn window_moves_are_saved() {
         vec![Effect::SaveConfig]
     );
     assert_eq!(h.model.position, Some((10, -20)));
+}
+
+#[test]
+fn the_minimized_parking_spot_is_not_saved() {
+    // Windows reports a minimized window at (-32000, -32000); saving that would lose the
+    // real position for the next start.
+    let mut h = Harness::new();
+    h.apply(Action::Moved { x: 10, y: 20 });
+    assert_eq!(
+        h.apply(Action::Moved {
+            x: -32000,
+            y: -32000
+        }),
+        vec![]
+    );
+    assert_eq!(h.model.position, Some((10, 20)));
+}
+
+#[test]
+fn the_visualizer_frame_shows_until_playback_stops() {
+    let mut h = Harness::playing(&["a"], 60);
+    let frame = Image::new(76, 16, 0);
+    assert!(h.model.vis_for(Some(&frame)).is_some());
+    assert!(
+        h.model.vis_for(Some(&Image::new(38, 5, 0))).is_none(),
+        "a shade-mode frame does not fit the normal window"
+    );
+    h.engine(EngineEvent::State(PlaybackState::Paused));
+    assert!(h.model.vis_for(Some(&frame)).is_some(), "kept while paused");
+    h.engine(EngineEvent::State(PlaybackState::Stopped));
+    assert!(h.model.vis_for(Some(&frame)).is_none(), "gone when stopped");
 }

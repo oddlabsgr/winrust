@@ -251,12 +251,7 @@ impl App {
             return;
         };
         let mut view = self.model.view(Instant::now());
-        // A frame drawn for the other mode (shade toggled while paused) does not fit.
-        let fits = if self.model.shade { (38, 5) } else { (76, 16) };
-        view.vis = self
-            .vis_frame
-            .clone()
-            .filter(|f| (f.width, f.height) == fits);
+        view.vis = self.model.vis_for(self.vis_frame.as_ref());
         let image = winrust_ui::draw::render(&self.skin, &view, &self.model.interaction);
         if win.surface.resize(w, h).is_err() {
             return;

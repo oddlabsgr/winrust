@@ -15,9 +15,17 @@ fn opening_replaces_the_queue_and_plays_the_first_entry() {
 }
 
 #[test]
-fn opening_nothing_changes_nothing() {
-    let mut h = Harness::playing(&["a"], 60);
-    assert!(h.apply(Action::Open(vec![])).is_empty());
+fn opening_nothing_keeps_the_queue_and_says_so() {
+    // A dropped folder with no audio files in it must not wipe what is playing.
+    let mut h = Harness::playing(&["a", "b"], 60);
+    let fx = h.apply(Action::Open(vec![]));
+    assert_eq!(commands(&fx), vec![]);
+    assert_eq!(h.model.marquee.text(), "No audio files found");
+    assert_eq!(h.model.queue.len(), 2);
+    assert_eq!(
+        commands(&h.control(Control::Next)),
+        vec![Command::Load(file("b"))]
+    );
 }
 
 #[test]

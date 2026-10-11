@@ -5,6 +5,7 @@
 use crate::queue::{Queue, Requeue};
 use std::time::{Duration, Instant};
 use winrust_audio::{Command, EngineEvent, PlaybackState, Source, TrackInfo};
+use winrust_skin::Image;
 use winrust_ui::interaction::{Interaction, Pointer, UiEvent};
 use winrust_ui::layout::Widget;
 use winrust_ui::marquee::{self, Marquee};
@@ -15,6 +16,8 @@ use winrust_ui::vis::VisMode;
 pub const FRAME: Duration = Duration::from_nanos(1_000_000_000 / 60);
 /// Shift+V's fadeout.
 const FADE: Duration = Duration::from_secs(1);
+/// Where Windows reports a minimized window; not a position worth saving.
+const MINIMIZED_AT: i32 = -32000;
 
 /// A request from a button, a hotkey or the mouse wheel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -125,6 +128,9 @@ pub struct Model {
     pub marquee: Marquee,
     /// When a fadeout (Shift+V) started.
     fade: Option<Instant>,
+    /// A fadeout lowered the engine's volume; it comes back once playback has stopped or
+    /// paused, so the last of the audio never plays at full volume.
+    faded: bool,
     /// When playback last paused; the time blinks from then.
     paused_at: Option<Instant>,
     last_tick: Option<Instant>,
@@ -155,6 +161,7 @@ impl Model {
             interaction: Interaction::new(),
             marquee,
             fade: None,
+            faded: false,
             paused_at: None,
             last_tick: None,
         }
@@ -177,6 +184,11 @@ impl Model {
         let mut fx = Vec::new();
         // Whether the window shows something new, beyond what `fx` already implies.
         let changed = match action {
+            // A dropped folder without audio files leaves what is playing alone.
+            Action::Open(sources) if sources.is_empty() => {
+                self.marquee.show_message("No audio files found");
+                true
+            }
             Action::Open(sources) => {
                 if let Some(i) = self.queue.replace(sources) {
                     self.load(i, &mut fx);
@@ -200,8 +212,10 @@ impl Model {
                 true
             }
             Action::Moved { x, y } => {
-                self.position = Some((x, y));
-                fx.push(Effect::SaveConfig);
+                if (x, y) != (MINIMIZED_AT, MINIMIZED_AT) {
+                    self.position = Some((x, y));
+                    fx.push(Effect::SaveConfig);
+                }
                 false
             }
             Action::Message(text) => {
@@ -251,6 +265,15 @@ impl Model {
         }
     }
 
+    /// The visualizer frame to draw: the latest one while playing or paused, if it fits the
+    /// window's mode (a frame made before shade mode toggled does not); none when stopped.
+    pub fn vis_for(&self, frame: Option<&Image>) -> Option<Image> {
+        let fits = if self.shade { (38, 5) } else { (76, 16) };
+        frame
+            .filter(|f| self.state != PlaybackState::Stopped && (f.width, f.height) == fits)
+            .cloned()
+    }
+
     /// When the next [`Action::Tick`] is due; `None` sleeps until some other input.
     pub fn next_wake(&self, now: Instant) -> Option<Instant> {
         if matches!(
@@ -296,6 +319,7 @@ impl Model {
             } else {
                 let level = f32::from(self.volume) * (1.0 - t.as_secs_f32() / FADE.as_secs_f32());
                 fx.push(Effect::Engine(Command::SetVolume(level.round() as u8)));
+                self.faded = true;
             }
         }
         let animating = matches!(
@@ -396,8 +420,9 @@ impl Model {
             },
             Control::Pause => match self.state {
                 Playing | Buffering => {
+                    // The volume comes back with the Paused state.
                     fx.push(Effect::Engine(Command::Pause));
-                    self.end_fade(fx);
+                    self.fade = None;
                 }
                 Paused => fx.push(Effect::Engine(Command::Play)),
                 Stopped => {}
@@ -491,6 +516,10 @@ impl Model {
                 if state == PlaybackState::Paused && self.state != state {
                     self.paused_at = Some(now);
                 }
+                if matches!(state, PlaybackState::Stopped | PlaybackState::Paused) {
+                    self.fade = None;
+                    self.restore_volume(fx);
+                }
                 self.state = state;
             }
             EngineEvent::Position(p) => self.elapsed = p,
@@ -570,13 +599,22 @@ impl Model {
 
     fn stop(&mut self, fx: &mut Vec<Effect>) {
         self.queue.stop();
+        self.fade = None;
         fx.push(Effect::Engine(Command::Stop));
-        self.end_fade(fx);
+        if self.state == PlaybackState::Stopped {
+            // Nothing plays, and no Stopped state will come to put the volume back.
+            self.restore_volume(fx);
+        }
     }
 
-    /// Ends a fadeout early or on time, putting the volume setting back.
+    /// Ends a fadeout because another track starts: the volume comes back with it.
     fn end_fade(&mut self, fx: &mut Vec<Effect>) {
-        if self.fade.take().is_some() {
+        self.fade = None;
+        self.restore_volume(fx);
+    }
+
+    fn restore_volume(&mut self, fx: &mut Vec<Effect>) {
+        if std::mem::take(&mut self.faded) {
             fx.push(Effect::Engine(Command::SetVolume(self.volume)));
         }
     }
