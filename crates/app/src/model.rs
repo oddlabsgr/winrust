@@ -5,10 +5,16 @@
 use crate::queue::{Queue, Requeue};
 use std::time::{Duration, Instant};
 use winrust_audio::{Command, EngineEvent, PlaybackState, Source, TrackInfo};
-use winrust_ui::interaction::{Interaction, Pointer};
+use winrust_ui::interaction::{Interaction, Pointer, UiEvent};
+use winrust_ui::layout::Widget;
 use winrust_ui::marquee::{self, Marquee};
-use winrust_ui::view::TimeMode;
+use winrust_ui::view::{MainView, PlayState, TimeMode};
 use winrust_ui::vis::VisMode;
+
+/// How often the window redraws while something animates.
+pub const FRAME: Duration = Duration::from_nanos(1_000_000_000 / 60);
+/// Shift+V's fadeout.
+const FADE: Duration = Duration::from_secs(1);
 
 /// A request from a button, a hotkey or the mouse wheel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -117,6 +123,11 @@ pub struct Model {
     pub position: Option<(i32, i32)>,
     pub interaction: Interaction,
     pub marquee: Marquee,
+    /// When a fadeout (Shift+V) started.
+    fade: Option<Instant>,
+    /// When playback last paused; the time blinks from then.
+    paused_at: Option<Instant>,
+    last_tick: Option<Instant>,
 }
 
 impl Model {
@@ -143,6 +154,9 @@ impl Model {
             position: None,
             interaction: Interaction::new(),
             marquee,
+            fade: None,
+            paused_at: None,
+            last_tick: None,
         }
     }
 
@@ -155,7 +169,11 @@ impl Model {
     }
 
     pub fn apply(&mut self, action: Action, now: Instant) -> Vec<Effect> {
-        let _ = now;
+        // Nothing moves while idle, so the animation clock skips idle time; otherwise the
+        // first tick after a quiet spell would advance by all of it (and end a new message).
+        if !matches!(action, Action::Tick) && self.next_wake(now).is_none() {
+            self.last_tick = Some(now);
+        }
         let mut fx = Vec::new();
         // Whether the window shows something new, beyond what `fx` already implies.
         let changed = match action {
@@ -163,29 +181,209 @@ impl Model {
                 if let Some(i) = self.queue.replace(sources) {
                     self.load(i, &mut fx);
                 }
-                false
+                !fx.is_empty()
             }
             Action::Control(c) => {
-                self.control(c, &mut fx);
-                false
+                self.control(c, now, &mut fx);
+                !fx.is_empty()
             }
+            Action::Pointer(p) => self.pointer(p, now, &mut fx),
             Action::Engine(e) => {
-                self.engine(e, &mut fx);
+                self.engine(e, now, &mut fx);
                 true
+            }
+            Action::Focus(focused) => {
+                self.focused = focused;
+                if !focused {
+                    self.cancel_pointer();
+                }
+                true
+            }
+            Action::Moved { x, y } => {
+                self.position = Some((x, y));
+                fx.push(Effect::SaveConfig);
+                false
             }
             Action::Message(text) => {
                 self.marquee.show_message(&text);
                 true
             }
-            Action::Pointer(_) | Action::Focus(_) | Action::Moved { .. } | Action::Tick => false,
+            Action::Tick => self.tick(now, &mut fx),
         };
-        if (changed || !fx.is_empty()) && !fx.contains(&Effect::Redraw) {
+        if changed && !fx.contains(&Effect::Redraw) {
             fx.push(Effect::Redraw);
         }
         fx
     }
 
-    fn control(&mut self, c: Control, fx: &mut Vec<Effect>) {
+    /// What the main window shows at `now`; the app adds the visualizer frame.
+    pub fn view(&self, now: Instant) -> MainView {
+        let track = self.track.as_ref();
+        MainView {
+            state: match self.state {
+                PlaybackState::Stopped => PlayState::Stopped,
+                PlaybackState::Playing => PlayState::Playing,
+                PlaybackState::Paused => PlayState::Paused,
+                PlaybackState::Buffering => PlayState::Buffering,
+            },
+            elapsed: self.elapsed,
+            duration: track.and_then(|t| t.duration),
+            time_mode: self.time_mode,
+            blink_hidden: self.blink_hidden(now),
+            title: self.marquee.text().to_string(),
+            title_offset: self.marquee.offset(),
+            kbps: track.and_then(|t| t.kbps),
+            khz: track.map(|t| t.khz),
+            channels: track.map(|t| t.channels),
+            volume: self.volume,
+            balance: self.balance,
+            seekable: track.is_some_and(|t| t.seekable),
+            shuffle: self.queue.shuffle,
+            repeat: self.queue.repeat,
+            eq: self.eq,
+            playlist: self.playlist,
+            focused: self.focused,
+            shade: self.shade,
+            double_size: self.double_size,
+            always_on_top: self.always_on_top,
+            easter_egg: self.easter_egg,
+            vis: None,
+        }
+    }
+
+    /// When the next [`Action::Tick`] is due; `None` sleeps until some other input.
+    pub fn next_wake(&self, now: Instant) -> Option<Instant> {
+        if matches!(
+            self.state,
+            PlaybackState::Playing | PlaybackState::Buffering
+        ) || self.fade.is_some()
+        {
+            return Some(now + FRAME);
+        }
+        let blink = self
+            .paused_at
+            .filter(|_| self.state == PlaybackState::Paused)
+            .map(|at| at + Duration::from_secs(now.saturating_duration_since(at).as_secs() + 1));
+        let marquee = self
+            .marquee
+            .next_change()
+            .map(|d| self.last_tick.unwrap_or(now) + d);
+        blink.into_iter().chain(marquee).min()
+    }
+
+    fn blink_hidden(&self, now: Instant) -> bool {
+        self.state == PlaybackState::Paused
+            && self
+                .paused_at
+                .is_some_and(|at| now.saturating_duration_since(at).as_secs() % 2 == 1)
+    }
+
+    fn tick(&mut self, now: Instant, fx: &mut Vec<Effect>) -> bool {
+        let last = self.last_tick.replace(now).unwrap_or(now);
+        let shown = |m: &Self, at| {
+            (
+                m.marquee.text().to_string(),
+                m.marquee.offset(),
+                m.blink_hidden(at),
+            )
+        };
+        let before = shown(self, last);
+        self.marquee.tick(now.saturating_duration_since(last));
+        if let Some(start) = self.fade {
+            let t = now.saturating_duration_since(start);
+            if t >= FADE {
+                self.stop(fx);
+            } else {
+                let level = f32::from(self.volume) * (1.0 - t.as_secs_f32() / FADE.as_secs_f32());
+                fx.push(Effect::Engine(Command::SetVolume(level.round() as u8)));
+            }
+        }
+        let animating = matches!(
+            self.state,
+            PlaybackState::Playing | PlaybackState::Buffering
+        );
+        animating || shown(self, now) != before
+    }
+
+    fn pointer(&mut self, p: Pointer, now: Instant, fx: &mut Vec<Effect>) -> bool {
+        let shown = |i: &Interaction| (i.pressed(), i.sliding());
+        let before = shown(&self.interaction);
+        let view = self.view(now);
+        let event = self.interaction.pointer(p, &view);
+        if let Some(e) = event {
+            self.ui_event(e, now, fx);
+        }
+        event.is_some() || shown(&self.interaction) != before
+    }
+
+    fn cancel_pointer(&mut self) {
+        if let Some(UiEvent::DragTitleEnd) = self.interaction.cancel() {
+            self.marquee.end_drag();
+        }
+    }
+
+    fn ui_event(&mut self, event: UiEvent, now: Instant, fx: &mut Vec<Effect>) {
+        match event {
+            UiEvent::Clicked(widget) => self.clicked(widget, now, fx),
+            UiEvent::Volume(v) => self.set_volume(v, fx),
+            UiEvent::Balance(b) => {
+                if b != self.balance {
+                    self.balance = b;
+                    fx.push(Effect::Engine(Command::SetBalance(f32::from(b) / 100.0)));
+                    fx.push(Effect::SaveConfig);
+                }
+            }
+            UiEvent::Seek(fraction) => {
+                if let Some(d) = self.track.as_ref().and_then(|t| t.duration) {
+                    self.seek(d.mul_f32(fraction.clamp(0.0, 1.0)), fx);
+                }
+            }
+            UiEvent::MoveWindow { dx, dy } => fx.push(Effect::MoveWindow { dx, dy }),
+            UiEvent::ToggleShade => self.control(Control::ToggleShade, now, fx),
+            UiEvent::DragTitle(dx) => self.marquee.drag(dx),
+            UiEvent::DragTitleEnd => self.marquee.end_drag(),
+        }
+    }
+
+    fn clicked(&mut self, widget: Widget, now: Instant, fx: &mut Vec<Effect>) {
+        let control = match widget {
+            Widget::Previous => Control::Previous,
+            Widget::Play => Control::Play,
+            Widget::Pause => Control::Pause,
+            Widget::Stop => Control::Stop,
+            Widget::Next => Control::Next,
+            Widget::Shuffle => Control::ToggleShuffle,
+            Widget::Repeat => Control::ToggleRepeat,
+            Widget::Eq => Control::ToggleEq,
+            Widget::Playlist => Control::TogglePlaylist,
+            Widget::Minimize => Control::Minimize,
+            Widget::Shade => Control::ToggleShade,
+            Widget::Close => Control::Close,
+            Widget::ClutterA => Control::ToggleAlwaysOnTop,
+            Widget::ClutterD => Control::ToggleDoubleSize,
+            Widget::Time => Control::ToggleTimeMode,
+            Widget::Vis => {
+                self.vis_mode = self.vis_mode.next();
+                fx.push(Effect::SaveConfig);
+                return;
+            }
+            // Menus, the file picker and the about box arrive in M7.
+            Widget::Options
+            | Widget::ClutterO
+            | Widget::ClutterI
+            | Widget::ClutterV
+            | Widget::Eject
+            | Widget::About
+            | Widget::TitleBar
+            | Widget::Marquee
+            | Widget::Volume
+            | Widget::Balance
+            | Widget::Seek => return,
+        };
+        self.control(control, now, fx);
+    }
+
+    fn control(&mut self, c: Control, now: Instant, fx: &mut Vec<Effect>) {
         use PlaybackState::*;
         match c {
             Control::Play => match self.state {
@@ -197,11 +395,20 @@ impl Model {
                 }
             },
             Control::Pause => match self.state {
-                Playing | Buffering => fx.push(Effect::Engine(Command::Pause)),
+                Playing | Buffering => {
+                    fx.push(Effect::Engine(Command::Pause));
+                    self.end_fade(fx);
+                }
                 Paused => fx.push(Effect::Engine(Command::Play)),
                 Stopped => {}
             },
-            Control::Stop | Control::FadeStop => self.stop(fx),
+            Control::Stop => self.stop(fx),
+            Control::FadeStop => match self.state {
+                Playing => {
+                    self.fade.get_or_insert(now);
+                }
+                _ => self.stop(fx),
+            },
             Control::StopAfterCurrent => {
                 self.queue.stop_after = !self.queue.stop_after;
                 self.requeue(fx);
@@ -238,21 +445,54 @@ impl Model {
                 self.requeue(fx);
                 fx.push(Effect::SaveConfig);
             }
-            Control::ToggleTimeMode
-            | Control::ToggleDoubleSize
-            | Control::ToggleAlwaysOnTop
-            | Control::ToggleShade
-            | Control::ToggleEq
-            | Control::TogglePlaylist
-            | Control::ToggleEasterEgg
-            | Control::Minimize
-            | Control::Close => {}
+            Control::ToggleTimeMode => {
+                self.time_mode = match self.time_mode {
+                    TimeMode::Elapsed => TimeMode::Remaining,
+                    TimeMode::Remaining => TimeMode::Elapsed,
+                };
+                fx.push(Effect::SaveConfig);
+            }
+            Control::ToggleDoubleSize => {
+                self.double_size = !self.double_size;
+                fx.push(Effect::Resize);
+                fx.push(Effect::SaveConfig);
+            }
+            Control::ToggleAlwaysOnTop => {
+                self.always_on_top = !self.always_on_top;
+                fx.push(Effect::SetAlwaysOnTop(self.always_on_top));
+                fx.push(Effect::SaveConfig);
+            }
+            Control::ToggleShade => {
+                // A drag in one layout means nothing in the other.
+                self.cancel_pointer();
+                self.shade = !self.shade;
+                fx.push(Effect::Resize);
+            }
+            Control::ToggleEq => {
+                self.eq = !self.eq;
+                fx.push(Effect::Redraw);
+            }
+            Control::TogglePlaylist => {
+                self.playlist = !self.playlist;
+                fx.push(Effect::Redraw);
+            }
+            Control::ToggleEasterEgg => {
+                self.easter_egg = !self.easter_egg;
+                fx.push(Effect::Redraw);
+            }
+            Control::Minimize => fx.push(Effect::Minimize),
+            Control::Close => fx.push(Effect::Exit),
         }
     }
 
-    fn engine(&mut self, event: EngineEvent, fx: &mut Vec<Effect>) {
+    fn engine(&mut self, event: EngineEvent, now: Instant, fx: &mut Vec<Effect>) {
         match event {
-            EngineEvent::State(state) => self.state = state,
+            EngineEvent::State(state) => {
+                if state == PlaybackState::Paused && self.state != state {
+                    self.paused_at = Some(now);
+                }
+                self.state = state;
+            }
             EngineEvent::Position(p) => self.elapsed = p,
             EngineEvent::TrackStarted { info, gapless } => {
                 if gapless && self.queue.stop_after {
@@ -302,6 +542,7 @@ impl Model {
         self.marquee
             .set_text(&marquee::track_title(index + 1, &name(&source), None));
         fx.push(Effect::Engine(Command::Load(source)));
+        self.end_fade(fx);
     }
 
     fn queue_next(&mut self, index: usize, fx: &mut Vec<Effect>) {
@@ -330,6 +571,14 @@ impl Model {
     fn stop(&mut self, fx: &mut Vec<Effect>) {
         self.queue.stop();
         fx.push(Effect::Engine(Command::Stop));
+        self.end_fade(fx);
+    }
+
+    /// Ends a fadeout early or on time, putting the volume setting back.
+    fn end_fade(&mut self, fx: &mut Vec<Effect>) {
+        if self.fade.take().is_some() {
+            fx.push(Effect::Engine(Command::SetVolume(self.volume)));
+        }
     }
 
     fn seek(&mut self, to: Duration, fx: &mut Vec<Effect>) {

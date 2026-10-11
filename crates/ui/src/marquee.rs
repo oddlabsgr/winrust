@@ -96,6 +96,20 @@ impl Marquee {
             as u32
     }
 
+    /// Time until the shown text or its scroll position next changes; `None` while nothing
+    /// moves, so the app can sleep instead of ticking.
+    pub fn next_change(&self) -> Option<Duration> {
+        let expiry = self.message.as_ref().map(|(_, left)| *left);
+        let step = (is_long(self.text()) && !self.dragging).then(|| {
+            if self.hold > Duration::ZERO {
+                self.hold + STEP
+            } else {
+                STEP - self.since_step
+            }
+        });
+        expiry.into_iter().chain(step).min()
+    }
+
     /// Advances time by `dt`.
     pub fn tick(&mut self, mut dt: Duration) {
         if let Some((_, left)) = &mut self.message {

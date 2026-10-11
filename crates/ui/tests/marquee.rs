@@ -119,3 +119,21 @@ fn short_text_is_padded_to_31_cells() {
     assert_eq!(marquee::looped("abc"), format!("abc{}", " ".repeat(28)));
     assert_eq!(marquee::looped(""), " ".repeat(31));
 }
+
+#[test]
+fn next_change_says_when_the_text_moves_again() {
+    let mut m = Marquee::new();
+    m.set_text("short");
+    assert_eq!(m.next_change(), None, "nothing moves");
+    m.set_text(LONG);
+    assert_eq!(m.next_change(), Some(STEP));
+    m.tick(ms(100));
+    assert_eq!(m.next_change(), Some(ms(120)));
+    m.drag(5);
+    assert_eq!(m.next_change(), None, "held while dragged");
+    m.end_drag();
+    assert_eq!(m.next_change(), Some(ms(1000) + STEP));
+    m.set_text("short");
+    m.show_message("hi");
+    assert_eq!(m.next_change(), Some(ms(3000)), "the message expires");
+}
