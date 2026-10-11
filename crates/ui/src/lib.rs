@@ -3,3 +3,4 @@
 //! the skin engine only.
 
 pub mod layout;
+pub mod view;
