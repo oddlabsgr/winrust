@@ -6,3 +6,4 @@ pub mod interaction;
 pub mod layout;
 pub mod marquee;
 pub mod view;
+pub mod vis;
