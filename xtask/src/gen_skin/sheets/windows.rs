@@ -47,8 +47,8 @@ pub fn main() -> Image {
     // The time display's colon is part of the background, as in Winamp.
     img.fill_rect(rect(72, 29, 2, 2), LCD_ON);
     img.fill_rect(rect(72, 34, 2, 2), LCD_ON);
-    // Song title, bitrate and sample rate.
-    lcd(&mut img, rect(109, 22, 158, 10));
+    // Song title (Webamp's marquee draws rows 27-32), bitrate and sample rate.
+    lcd(&mut img, rect(109, 25, 158, 10));
     lcd(&mut img, rect(109, 41, 19, 10));
     label(&mut img, 130, 43, "KBPS", INK_DIM);
     lcd(&mut img, rect(154, 41, 14, 10));
@@ -94,12 +94,12 @@ pub fn eqmain() -> Image {
         248,
     );
     title_bar(&mut img, r(S::EqTitleBar), "EQUALIZER", false, 6, 248);
-    // The shade button is part of the title bars (Webamp falls back to it).
+    // The title buttons are part of the bars; Webamp also falls back to the shade button
+    // for its pressed state.
     for bar in [S::EqTitleBarSelected, S::EqTitleBar] {
-        let b = r(bar);
-        let shade = rect(b.x + 254, b.y + 3, 9, 9);
-        raised(&mut img, shade);
-        bitmap_centered(&mut img, shade, &icons::SHADE, INK);
+        for (x, icon) in [(254, &icons::SHADE), (264, &icons::CLOSE)] {
+            bar_button(&mut img, r(bar), x, icon);
+        }
     }
     for (id, down) in [(S::EqCloseButton, false), (S::EqCloseButtonActive, true)] {
         button(&mut img, r(id), down, |img, b, c| {
@@ -203,6 +203,9 @@ pub fn eq_ex() -> Image {
         groove(&mut img, rect(b.x + 61, b.y + 4, 97, 7));
         groove(&mut img, rect(b.x + 164, b.y + 4, 43, 7));
         title_stripes(&mut img, b.x + 212, b.y + 4, 38, active);
+        for (x, icon) in [(254, &icons::UNSHADE), (264, &icons::CLOSE)] {
+            bar_button(&mut img, b, x, icon);
+        }
     }
     let thumbs = [
         (S::EqShadeVolumeSliderLeft, 0),
@@ -341,7 +344,11 @@ pub fn pledit() -> Image {
         let area = rect(br.x + 3 + 10 * i as u32, br.y + 22, 10, 10);
         icons::transport(&mut img, kind, area, 5, INK);
     }
-    lcd(&mut img, rect(br.x + 64, br.y + 21, 30, 10));
+    lcd(&mut img, rect(br.x + 65, br.y + 21, 32, 10));
+    // Webamp draws only the mini time's digits; the colon comes from the background.
+    for dy in [24, 26] {
+        img.set(br.x + 84, br.y + dy, LCD_ON);
+    }
     menu_item(
         &mut img,
         rect(br.x + 106, br.y + 8, 22, 18),

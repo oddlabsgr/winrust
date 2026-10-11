@@ -29,6 +29,14 @@ pub fn button(img: &mut Image, b: Rect, down: bool, icon: impl FnOnce(&mut Image
     }
 }
 
+/// A 9×9 title button baked into a bar at `x`: Winamp shows the bar's own pixels until
+/// the button is first clicked.
+pub fn bar_button(img: &mut Image, bar: Rect, x: u32, icon: &[&str]) {
+    button(img, rect(bar.x + x, bar.y + 3, 9, 9), false, |img, b, c| {
+        bitmap_centered(img, b, icon, c)
+    });
+}
+
 pub fn knob(img: &mut Image, b: Rect, active: bool, vertical_grip: bool) {
     if active {
         vgradient(img, b, COPPER, RUST);

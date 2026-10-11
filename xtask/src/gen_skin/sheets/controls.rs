@@ -87,6 +87,21 @@ pub fn titlebar() -> Image {
         240,
     );
     title_bar(&mut img, r(S::MainEasterEggTitleBar), egg, false, 18, 240);
+    for bar in [
+        S::MainTitleBarSelected,
+        S::MainTitleBar,
+        S::MainEasterEggTitleBarSelected,
+        S::MainEasterEggTitleBar,
+    ] {
+        for (x, icon) in [
+            (6, &icons::MENU),
+            (244, &icons::MINIMIZE),
+            (254, &icons::SHADE),
+            (264, &icons::CLOSE),
+        ] {
+            bar_button(&mut img, r(bar), x, icon);
+        }
+    }
 
     let small_buttons: [(S, S, &[&str]); 5] = [
         (
@@ -164,7 +179,11 @@ pub fn titlebar() -> Image {
         frame(&mut img, b, BEVEL_LIGHT, BEVEL_DARK);
         title_stripes(&mut img, b.x + 18, b.y + 4, 56, active);
         lcd(&mut img, rect(b.x + 78, b.y + 3, 40, 8));
-        lcd(&mut img, rect(b.x + 125, b.y + 2, 31, 10));
+        lcd(&mut img, rect(b.x + 126, b.y + 2, 32, 10));
+        // Webamp draws only the mini time's digits; the colon comes from the bar.
+        for dy in [5, 7] {
+            img.set(b.x + 145, b.y + dy, LCD_ON);
+        }
         let ink = if active { INK } else { INK_DIM };
         let minis = [
             (169, 7, Transport::Previous),
@@ -178,6 +197,14 @@ pub fn titlebar() -> Image {
             icons::transport(&mut img, kind, rect(b.x + x, b.y + 2, w, 10), 5, ink);
         }
         title_stripes(&mut img, b.x + 158, b.y + 4, 8, active);
+        for (x, icon) in [
+            (6, &icons::MENU),
+            (244, &icons::MINIMIZE),
+            (254, &icons::UNSHADE),
+            (264, &icons::CLOSE),
+        ] {
+            bar_button(&mut img, b, x, icon);
+        }
     }
     groove(&mut img, r(S::MainShadePositionBackground));
     for id in [

@@ -94,9 +94,10 @@ fn mono_and_stereo_light_up_when_selected() {
 fn indicators_show_play_state_and_work() {
     let p = lcd::playpaus();
     assert!(lit(&p, S::MainPlayingIndicator.def().rect) > 0);
-    // Only the first 3 columns of the work indicators are ever shown.
-    let busy = S::MainWorkingIndicator.def().rect;
-    assert!(lit(&p, Rect::new(busy.x, busy.y, 3, 9)) > 0);
+    // Only the first 3 columns of the work indicators are ever shown. Webamp shows
+    // "not working" beside the play triangle during playback, "working" while buffering.
     let idle = S::MainNotWorkingIndicator.def().rect;
-    assert!(pixels(&p, Rect::new(idle.x, idle.y, 3, 9)).contains(&RUST));
+    assert!(lit(&p, Rect::new(idle.x, idle.y, 3, 9)) > 0);
+    let busy = S::MainWorkingIndicator.def().rect;
+    assert!(pixels(&p, Rect::new(busy.x, busy.y, 3, 9)).contains(&RUST));
 }

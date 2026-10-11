@@ -45,6 +45,49 @@ fn time_colon_is_part_of_the_main_background() {
 }
 
 #[test]
+fn song_title_cells_sit_inside_their_panel() {
+    // Webamp's marquee (top 24, 3 px padding) draws text rows 27-32 from x = 111.
+    let main = windows::main();
+    let text = Rect::new(111, 27, 154, 6);
+    assert!(pixels(&main, text).iter().all(|&p| p == LCD_BG));
+}
+
+#[test]
+fn playlist_mini_time_fits_its_panel_and_has_a_colon() {
+    // Webamp draws five 5×6 cells from x = 66 + 1, 7, 12, 20, 25 at y = 23, and no colon.
+    let pl = windows::pledit();
+    let br = S::PlaylistBottomRightCorner.def().rect;
+    for left in [1, 7, 12, 20, 25] {
+        let cell = Rect::new(br.x + 66 + left, br.y + 23, 5, 6);
+        assert!(
+            pixels(&pl, cell).iter().all(|&p| p == LCD_BG),
+            "cell {left}"
+        );
+    }
+    for y in [24, 26] {
+        assert_eq!(pl.get(br.x + 84, br.y + y), LCD_ON, "colon row {y}");
+    }
+}
+
+#[test]
+fn eq_title_bars_hold_their_buttons() {
+    // Like the main window's, the EQ's shade and close buttons show the bar until clicked.
+    let (eq, ex) = (windows::eqmain(), windows::eq_ex());
+    for (img, bar) in [
+        (&eq, S::EqTitleBarSelected),
+        (&eq, S::EqTitleBar),
+        (&ex, S::EqShadeBackgroundSelected),
+        (&ex, S::EqShadeBackground),
+    ] {
+        let b = bar.def().rect;
+        for x in [254, 264] {
+            let button = Rect::new(b.x + x, b.y + 3, 9, 9);
+            assert!(pixels(img, button).contains(&INK), "{bar:?} at {x}");
+        }
+    }
+}
+
+#[test]
 fn eq_graph_colours_run_red_to_green() {
     let eq = windows::eqmain();
     let r = S::EqGraphLineColors.def().rect;

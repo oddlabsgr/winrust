@@ -1,5 +1,5 @@
 use winrust_skin::{Image, Rect, Sheet, SpriteId as S};
-use xtask::gen_skin::palette::{BEVEL_LIGHT, GROOVE, INK, LCD_ON, RUST, SHADOW};
+use xtask::gen_skin::palette::{BEVEL_LIGHT, GROOVE, INK, LCD_BG, LCD_ON, RUST, SHADOW};
 use xtask::gen_skin::sheets::controls;
 
 fn pixels(img: &Image, r: Rect) -> Vec<u32> {
@@ -85,6 +85,45 @@ fn shade_bar_shows_the_mini_transport() {
     let img = controls::titlebar();
     let bar = S::MainShadeBackgroundSelected.def().rect;
     assert!(pixels(&img, Rect::new(bar.x + 169, bar.y, 56, 14)).contains(&INK));
+}
+
+#[test]
+fn title_bars_hold_their_buttons() {
+    // Winamp shows the bar's own pixels until a title button is first clicked.
+    let img = controls::titlebar();
+    for bar in [
+        S::MainTitleBarSelected,
+        S::MainTitleBar,
+        S::MainEasterEggTitleBarSelected,
+        S::MainEasterEggTitleBar,
+        S::MainShadeBackgroundSelected,
+        S::MainShadeBackground,
+    ] {
+        let b = bar.def().rect;
+        for x in [6, 244, 254, 264] {
+            let button = Rect::new(b.x + x, b.y + 3, 9, 9);
+            assert!(pixels(&img, button).contains(&INK), "{bar:?} at {x}");
+        }
+    }
+}
+
+#[test]
+fn shade_bar_mini_time_fits_its_panel_and_has_a_colon() {
+    // Webamp draws five 5×6 cells from x = 127 + 1, 7, 12, 20, 25 at y = 4, and no colon.
+    let img = controls::titlebar();
+    for bar in [S::MainShadeBackgroundSelected, S::MainShadeBackground] {
+        let b = bar.def().rect;
+        for left in [1, 7, 12, 20, 25] {
+            let cell = Rect::new(b.x + 127 + left, b.y + 4, 5, 6);
+            assert!(
+                pixels(&img, cell).iter().all(|&p| p == LCD_BG),
+                "{bar:?} cell {left}"
+            );
+        }
+        for y in [5, 7] {
+            assert_eq!(img.get(b.x + 145, b.y + y), LCD_ON, "{bar:?} colon row {y}");
+        }
+    }
 }
 
 #[test]

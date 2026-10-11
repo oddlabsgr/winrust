@@ -106,10 +106,11 @@ pub fn playpaus() -> Image {
     icons::transport(&mut img, Transport::Pause, pause, 7, COPPER);
     let stop = r(S::MainStoppedIndicator);
     img.fill_rect(rect(stop.x + 2, stop.y + 2, 5, 5), INK_DIM);
-    // Only the first 3 columns of the work indicators show.
+    // Only the first 3 columns of the work indicators show: "not working" beside the play
+    // triangle during playback, "working" while a stream buffers.
     let idle = r(S::MainNotWorkingIndicator);
-    img.fill_rect(rect(idle.x, idle.y + 1, 2, 7), RUST);
+    img.fill_rect(rect(idle.x, idle.y + 1, 2, 7), LCD_ON);
     let busy = r(S::MainWorkingIndicator);
-    img.fill_rect(rect(busy.x, busy.y + 1, 2, 7), LCD_ON);
+    img.fill_rect(rect(busy.x, busy.y + 1, 2, 7), RUST);
     img
 }
