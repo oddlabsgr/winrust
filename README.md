@@ -24,6 +24,10 @@ Developer tasks: `cargo xtask help`. Regenerating the audio test fixtures
 (`cargo xtask gen-fixtures`) needs `ffmpeg` on `PATH`; the generated files are committed, so
 normal builds and tests do not.
 
+`cargo xtask gen-skin` redraws the default skin, Winrust Base, into `assets/skin/` from the
+code in `xtask/src/gen_skin/`. Its output is committed too, and a test fails when the two
+drift apart.
+
 ## Trying the audio engine
 
 ```sh
