@@ -12,6 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 winrust-audio = { path = "../audio" }
+winrust-ui = { path = "../ui" }
 
 [dev-dependencies]
 tempfile = "3"
