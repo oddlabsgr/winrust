@@ -6,7 +6,7 @@ use crate::types::EngineError;
 use crossbeam_channel::{Receiver, RecvTimeoutError, bounded, unbounded};
 use std::io::{self, Read};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -36,11 +36,38 @@ impl Cancel {
 
 type Chunk = Result<Vec<u8>, String>;
 
+/// How much stream data waits to be read. The decode thread checks it before decoding, so a
+/// stalled network never blocks it inside a read: it keeps handling commands and reporting
+/// state and position meanwhile.
+#[derive(Clone, Debug, Default)]
+pub struct Backlog {
+    bytes: Arc<AtomicUsize>,
+    closed: Arc<AtomicBool>,
+}
+
+impl Backlog {
+    /// True when `want` bytes can be read without waiting for the network, or when the
+    /// stream has ended (reads then return what is left, then end).
+    pub fn ready(&self, want: usize) -> bool {
+        self.closed.load(Ordering::Acquire) || self.bytes.load(Ordering::Acquire) >= want
+    }
+}
+
+/// Marks the stream ended when the network thread exits, however it exits.
+struct Closer(Arc<AtomicBool>);
+
+impl Drop for Closer {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+
 pub struct OpenStream {
     pub reader: PipeReader,
     pub content_type: Option<String>,
     pub bitrate: Option<u32>,
     pub titles: Receiver<String>,
+    pub backlog: Backlog,
 }
 
 /// Connects on a background thread and waits for the response headers.
@@ -51,9 +78,12 @@ pub fn open(url: &str, cancel: Cancel) -> Result<OpenStream, EngineError> {
     let (title_tx, title_rx) = unbounded();
     let url_owned = url.to_string();
     let net_cancel = cancel.clone();
+    let backlog = Backlog::default();
+    let net_backlog = backlog.clone();
     thread::Builder::new()
         .name("winrust-net".into())
         .spawn(move || {
+            let _closer = Closer(net_backlog.closed.clone());
             let resp = match http::open(&url_owned) {
                 Ok(r) => r,
                 Err(e) => {
@@ -76,6 +106,7 @@ pub fn open(url: &str, cancel: Cancel) -> Result<OpenStream, EngineError> {
                     Ok(0) => return,
                     Ok(n) => {
                         buf.truncate(n);
+                        net_backlog.bytes.fetch_add(n, Ordering::AcqRel);
                         if chunk_tx.send(Ok(buf)).is_err() {
                             return;
                         }
@@ -108,10 +139,12 @@ pub fn open(url: &str, cancel: Cancel) -> Result<OpenStream, EngineError> {
             buf: Vec::new(),
             pos: 0,
             cancel,
+            backlog: backlog.clone(),
         },
         content_type,
         bitrate,
         titles: title_rx,
+        backlog,
     })
 }
 
@@ -121,6 +154,7 @@ pub struct PipeReader {
     buf: Vec<u8>,
     pos: usize,
     cancel: Cancel,
+    backlog: Backlog,
 }
 
 impl Read for PipeReader {
@@ -142,6 +176,7 @@ impl Read for PipeReader {
         let n = out.len().min(self.buf.len() - self.pos);
         out[..n].copy_from_slice(&self.buf[self.pos..self.pos + n]);
         self.pos += n;
+        self.backlog.bytes.fetch_sub(n, Ordering::AcqRel);
         Ok(n)
     }
 }
@@ -247,6 +282,35 @@ mod tests {
         let started = std::time::Instant::now();
         assert_eq!(s.reader.read(&mut one).unwrap(), 0);
         assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn backlog_counts_unread_bytes_until_the_stream_ends() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (close_tx, close_rx) = bounded::<()>(1);
+        thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut req = [0u8; 1024];
+            let _ = sock.read(&mut req);
+            sock.write_all(b"HTTP/1.0 200 OK\r\n\r\nABCDEFGH").unwrap();
+            let _ = close_rx.recv();
+        });
+        let mut s = open(&format!("http://{addr}/"), Cancel::default()).unwrap();
+        let wait = |ready: &dyn Fn() -> bool| {
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !ready() {
+                assert!(std::time::Instant::now() < deadline, "timed out");
+                thread::sleep(Duration::from_millis(10));
+            }
+        };
+        wait(&|| s.backlog.ready(8));
+        assert!(!s.backlog.ready(9), "only 8 bytes arrived");
+        let mut four = [0u8; 4];
+        s.reader.read_exact(&mut four).unwrap();
+        assert!(s.backlog.ready(4) && !s.backlog.ready(5), "4 bytes left");
+        close_tx.send(()).unwrap();
+        wait(&|| s.backlog.ready(1000));
     }
 
     #[test]

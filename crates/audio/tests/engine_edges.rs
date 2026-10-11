@@ -335,8 +335,7 @@ content-type: audio/wav
     engine
         .handle()
         .send(Command::Load(Source::Url(format!("http://{addr}/"))));
-    // Wait for audio rather than State(Playing): once the read stalls, the worker blocks in
-    // it and may never get to report Playing (seen on a slow macOS runner).
+    // Wait for audio rather than State(Playing), which a slow runner may report late.
     let deadline = Instant::now() + LONG;
     while captured.lock().unwrap().is_empty() {
         assert!(Instant::now() < deadline, "playback never started");
@@ -430,5 +429,48 @@ fn rate_change_keeps_the_queued_track() {
             EngineEvent::TrackStarted { info, gapless: true } if info.source == Source::File(b.clone())
         )),
         "{events:#?}"
+    );
+}
+
+#[test]
+fn position_and_state_keep_updating_while_stream_stalls() {
+    // M1 carry-forward: a stalled stream read used to block the decode thread, so position
+    // and state stopped updating (and Pause waited) until data resumed or the read timed out.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        let (mut sock, _) = listener.accept().unwrap();
+        let mut req = [0u8; 1024];
+        let _ = sock.read(&mut req);
+        let mut out = b"HTTP/1.0 200 OK\r\ncontent-type: audio/wav\r\n\r\n".to_vec();
+        // 3 s of audio: past the 2 s prebuffer, then silence on the wire.
+        let wav = wav_bytes(RATE, &sine_i16(RATE, 0, 10 * RATE as usize));
+        out.extend(&wav[..44 + 3 * RATE as usize * 4]);
+        sock.write_all(&out).unwrap();
+        std::thread::sleep(Duration::from_secs(30));
+    });
+    let engine = Engine::spawn(Box::new(CaptureSink::realtime(RATE))).unwrap();
+    engine
+        .handle()
+        .send(Command::Load(Source::Url(format!("http://{addr}/"))));
+    // The buffered audio plays on while the network is silent, and the time keeps moving...
+    wait_for(
+        engine.events(),
+        LONG,
+        |e| matches!(e, EngineEvent::Position(p) if *p >= Duration::from_millis(2500)),
+    );
+    // ...until the buffer runs dry, which the engine reports.
+    wait_for(engine.events(), LONG, |e| {
+        matches!(e, EngineEvent::State(PlaybackState::Buffering))
+    });
+    let asked = Instant::now();
+    engine.handle().send(Command::Pause);
+    wait_for(engine.events(), LONG, |e| {
+        matches!(e, EngineEvent::State(PlaybackState::Paused))
+    });
+    assert!(
+        asked.elapsed() < Duration::from_secs(1),
+        "pause took {:?}",
+        asked.elapsed()
     );
 }

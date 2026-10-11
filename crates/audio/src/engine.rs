@@ -5,7 +5,7 @@ use crate::dsp::DspChain;
 use crate::renderer::{AnalyzerReader, Renderer, Shared};
 use crate::resample::StreamResampler;
 use crate::sink::{AudioSink, SinkEvent};
-use crate::stream::{self, Cancel, extension_for_mime};
+use crate::stream::{self, Backlog, Cancel, extension_for_mime};
 use crate::timeline::{Timeline, TimelineEvent};
 use crate::types::{Command, EngineError, EngineEvent, EqSettings, PlaybackState, Source};
 use crate::volume::slider_to_gain;
@@ -32,6 +32,9 @@ const IDLE_TICK: Duration = Duration::from_millis(10);
 const POSITION_EVERY: Duration = Duration::from_millis(100);
 /// Packets decoded per loop turn before checking commands again.
 const PACKETS_PER_TURN: usize = 16;
+/// Streams: decode only while this much data waits in the pipe, so a packet never has to
+/// wait for the network (compressed packets are a few KiB at most).
+const STREAM_READ_AHEAD: usize = 8 * 1024;
 
 /// Cheap, cloneable way to control the engine from any thread.
 #[derive(Clone)]
@@ -128,6 +131,17 @@ struct Active {
     titles: Option<Receiver<String>>,
     /// Streams only: fires when a Load/Stop/SetDevice interrupts a blocked read.
     cancel: Option<Cancel>,
+    /// Streams only: data waiting in the network pipe.
+    backlog: Option<Backlog>,
+}
+
+impl Active {
+    /// False while a stream's next read would wait for the network.
+    fn readable(&self) -> bool {
+        self.backlog
+            .as_ref()
+            .is_none_or(|b| b.ready(STREAM_READ_AHEAD))
+    }
 }
 
 struct ResumePoint {
@@ -251,7 +265,8 @@ impl Worker {
 
     fn wants_work(&self) -> bool {
         self.flush_settled()
-            && ((self.active.is_some() && self.ring_frames() < self.fill_target)
+            && ((self.active.as_ref().is_some_and(Active::readable)
+                && self.ring_frames() < self.fill_target)
                 || (!self.pending.is_empty() && self.producer.slots() >= 2))
     }
 
@@ -458,6 +473,9 @@ impl Worker {
             let Some(active) = self.active.as_mut() else {
                 return;
             };
+            if !active.readable() {
+                return;
+            }
             self.decoded.clear();
             let decoded = &mut self.decoded;
             let step = catch_unwind(AssertUnwindSafe(|| active.decoder.decode_next(decoded)))
@@ -644,8 +662,8 @@ fn open_source(
     epoch: Arc<AtomicU64>,
     device_rate: u32,
 ) -> Result<Active, EngineError> {
-    let (decoder, is_stream, titles, cancel) = match source {
-        Source::File(path) => (Decoder::open_file(path)?, false, None, None),
+    let (decoder, is_stream, titles, cancel, backlog) = match source {
+        Source::File(path) => (Decoder::open_file(path)?, false, None, None, None),
         Source::Url(url) => {
             let cancel = Cancel::new(epoch);
             let s = stream::open(url, cancel.clone())?;
@@ -662,7 +680,7 @@ fn open_source(
                 &hint,
             )?;
             decoder.set_kbps(s.bitrate);
-            (decoder, true, Some(s.titles), Some(cancel))
+            (decoder, true, Some(s.titles), Some(cancel), Some(s.backlog))
         }
     };
     let source_rate = decoder.sample_rate();
@@ -673,6 +691,7 @@ fn open_source(
         is_stream,
         titles,
         cancel,
+        backlog,
     })
 }
 
