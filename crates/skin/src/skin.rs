@@ -153,11 +153,11 @@ impl Skin {
         }
     }
 
-    /// The built-in skin used for anything a skin lacks. Until the Winrust Base skin is
-    /// generated (M2 part 2) this is the debug skin.
+    /// Winrust Base, the built-in skin used for anything a skin lacks.
     pub fn base() -> Arc<Skin> {
         static BASE: OnceLock<Arc<Skin>> = OnceLock::new();
-        BASE.get_or_init(|| Arc::new(Skin::debug())).clone()
+        BASE.get_or_init(|| Arc::new(crate::base::winrust_base()))
+            .clone()
     }
 
     /// The sprite's pixels: from this skin when its sheet reaches the sprite (missing

@@ -14,3 +14,8 @@ fn png_round_trip() {
 fn debug_skin_contact_sheet() {
     assert_golden("debug-contact", &contact_sheet(&Skin::debug()));
 }
+
+#[test]
+fn base_skin_contact_sheet() {
+    assert_golden("base-contact", &contact_sheet(&Skin::base()));
+}
