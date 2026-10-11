@@ -5,3 +5,4 @@ pub mod draw;
 pub mod font;
 pub mod icons;
 pub mod palette;
+pub mod sheets;
