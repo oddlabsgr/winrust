@@ -1,5 +1,6 @@
 //! One playlist entry and what is known about it.
 
+use crate::tags::{FileTags, TagError};
 use crate::title::Template;
 use std::time::Duration;
 use winrust_audio::Source;
@@ -65,6 +66,23 @@ impl Entry {
 
     pub fn id(&self) -> EntryId {
         self.id
+    }
+
+    /// Takes the result of reading the file's tags. A file that cannot be read keeps the
+    /// title the playlist file gave it.
+    pub fn set_tags(&mut self, result: Result<FileTags, TagError>) {
+        match result {
+            Ok(read) => {
+                self.tags = Some(read.tags);
+                self.duration = read.duration.or(self.duration);
+            }
+            Err(_) => {
+                self.tags = Some(Tags {
+                    title: self.hint.clone(),
+                    ..Tags::default()
+                })
+            }
+        }
     }
 
     /// `%filename%`: the file name without its extension; for a stream, the URL.

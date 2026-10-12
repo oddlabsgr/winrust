@@ -5,6 +5,11 @@ all-features = false
 
 [advisories]
 yanked = "deny"
+ignore = [
+    # paste is unmaintained, not vulnerable: a build-time macro crate that lofty (tag reading)
+    # uses. Nothing of it runs in Winrust.
+    { id = "RUSTSEC-2024-0436", reason = "unmaintained build-time macro used by lofty" },
+]
 
 [licenses]
 # Permissive licenses only. MPL-2.0 (symphonia, triple_buffer) is file-level copyleft and

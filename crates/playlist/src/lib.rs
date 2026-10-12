@@ -9,4 +9,6 @@ pub mod order;
 pub mod playlist;
 pub mod rng;
 pub mod sources;
+pub mod tags;
 pub mod title;
+pub mod worker;
