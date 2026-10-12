@@ -4,4 +4,5 @@
 
 pub mod entry;
 pub mod playlist;
+pub mod rng;
 pub mod title;
