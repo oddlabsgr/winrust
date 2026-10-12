@@ -3,6 +3,7 @@
 //! touches the disk.
 
 pub mod entry;
+pub mod order;
 pub mod playlist;
 pub mod rng;
 pub mod title;
