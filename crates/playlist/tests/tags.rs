@@ -93,3 +93,15 @@ fn an_unreadable_file_keeps_the_playlist_file_title() {
     assert_eq!(entry.title(&Default::default()), "From the list");
     assert!(!entry.dead);
 }
+
+#[test]
+fn the_format_comes_from_the_content_so_oga_files_are_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let ogg = fixture(dir.path(), "tone.ogg");
+    write_tags(&ogg, &full_tags());
+    let oga = dir.path().join("tone.oga");
+    std::fs::rename(&ogg, &oga).unwrap();
+    let got = read(&oga).unwrap();
+    assert_eq!(got.tags, full_tags());
+    assert!(about_a_second(got.duration));
+}

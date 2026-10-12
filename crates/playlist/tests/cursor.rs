@@ -291,3 +291,16 @@ fn play_after_replacing_the_list_starts_at_its_first_entry() {
     pl.replace(vec![file("a"), file("b")]);
     assert_eq!(row!(pl, c.play(&mut pl)), Some(0));
 }
+
+#[test]
+fn previous_and_next_walk_the_shuffle_history() {
+    let (mut pl, mut c) = started(5);
+    c.order.set_shuffle(true, &pl);
+    let first = pl.current();
+    let second = c.next(&mut pl);
+    let third = c.next(&mut pl);
+    assert_eq!(c.previous(&mut pl), second);
+    assert_eq!(c.previous(&mut pl), first);
+    assert_eq!(c.next(&mut pl), second);
+    assert_eq!(c.next(&mut pl), third);
+}

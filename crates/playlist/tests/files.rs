@@ -207,3 +207,15 @@ fn m3u8_and_pls_read_back_what_was_written() {
         assert_eq!(parse_pls(&pls, dir.path()), expected, "{pls}");
     }
 }
+
+#[test]
+fn an_old_pls_that_is_not_utf8_is_windows_1252_too() {
+    // Winamp 2.x wrote PLS files in the ANSI code page.
+    let dir = tempfile::tempdir().unwrap();
+    let pls = dir.path().join("old.pls");
+    fs::write(&pls, b"[playlist]\nFile1=Bj\xF6rk.mp3\n").unwrap();
+    assert_eq!(
+        read(&pls).unwrap(),
+        [item(Source::File(dir.path().join("Björk.mp3")), None, None)]
+    );
+}

@@ -165,7 +165,7 @@ fn previous_walks_back_through_what_played() {
     let back = order.previous(&pl).unwrap();
     assert_eq!(name(&pl, Some(back)).unwrap(), first[1]);
     pl.set_current(Some(back));
-    order.played(&pl, back);
+    order.back_to(&pl, back);
     assert_eq!(
         advance(&mut order, &mut pl).unwrap(),
         first[2],
@@ -225,4 +225,22 @@ fn the_same_seed_gives_the_same_order() {
     };
     assert_eq!(order(42), order(42));
     assert_ne!(order(42), order(43));
+}
+
+#[test]
+fn choosing_an_entry_that_already_played_does_not_replay_the_ones_after_it() {
+    let mut pl = playlist(10);
+    let mut order = PlayOrder::new(21);
+    order.set_shuffle(true, &pl);
+    let heard: Vec<String> = (0..6)
+        .map(|_| advance(&mut order, &mut pl).unwrap())
+        .collect();
+    // A double-click on the second track heard.
+    let row = names(&pl).iter().position(|n| *n == heard[1]).unwrap();
+    let again = pl.entries()[row].id();
+    pl.set_current(Some(again));
+    order.played(&pl, again);
+    let after = rest(&mut order, &mut pl);
+    assert_eq!(after.len(), 4, "{after:?}");
+    assert!(after.iter().all(|n| !heard.contains(n)), "{after:?}");
 }

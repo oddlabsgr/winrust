@@ -32,9 +32,15 @@ impl std::error::Error for TagError {}
 /// The primary tag, or else the first tag the file has, and the duration. A file without
 /// tags still gets its duration.
 pub fn read(path: &Path) -> Result<FileTags, TagError> {
+    let error = |e: &dyn fmt::Display| TagError(e.to_string());
+    // The content decides the format, not only the extension (`.oga`, misnamed files).
     let file = Probe::open(path)
-        .and_then(|p| p.options(ParseOptions::new().read_cover_art(false)).read())
-        .map_err(|e| TagError(e.to_string()))?;
+        .map_err(|e| error(&e))?
+        .options(ParseOptions::new().read_cover_art(false))
+        .guess_file_type()
+        .map_err(|e| error(&e))?
+        .read()
+        .map_err(|e| error(&e))?;
     let duration = Some(file.properties().duration()).filter(|d| !d.is_zero());
     let tags = file
         .primary_tag()

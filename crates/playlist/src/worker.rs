@@ -5,6 +5,7 @@ use crate::entry::EntryId;
 use crate::tags::{self, FileTags, TagError};
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use std::collections::VecDeque;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 
 pub type TagResult = Result<FileTags, TagError>;
@@ -63,7 +64,11 @@ fn run(
             }
         }
         if let Some((id, path)) = pending.pop_front() {
-            deliver(id, read(&path));
+            // A tag library panicking on one bad file must not end tag reading for the
+            // session (umbrella §10: no panics on bad user data).
+            let result = panic::catch_unwind(AssertUnwindSafe(|| read(&path)))
+                .unwrap_or_else(|_| Err(TagError("the file's tags could not be read".into())));
+            deliver(id, result);
         }
     }
 }

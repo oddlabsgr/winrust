@@ -32,7 +32,7 @@ fn urls_and_files_are_told_apart() {
         [
             Source::Url("HTTPS://radio.example/live".into()).into(),
             Source::Url("icy://radio.example/x".into()).into(),
-            Source::File(PathBuf::from("song.mp3")).into(),
+            Source::File(std::env::current_dir().unwrap().join("song.mp3")).into(),
         ]
     );
 }
@@ -141,4 +141,11 @@ fn linked_files_count_and_linked_folders_are_not_followed() {
         from_paths(vec![root.to_path_buf()]),
         files(&[root.join("link.mp3"), root.join("real").join("a.mp3")])
     );
+}
+
+#[test]
+fn relative_arguments_become_absolute_so_the_autosave_finds_them_again() {
+    let cwd = std::env::current_dir().unwrap();
+    let got = from_args([OsString::from("sub/x.mp3")]);
+    assert_eq!(got, files(&[cwd.join("sub").join("x.mp3")]));
 }

@@ -72,9 +72,11 @@ impl Cursor {
         self.load(pl, id)
     }
 
+    /// With shuffle, back through what played; next then walks forward through it again.
     pub fn previous(&mut self, pl: &mut Playlist) -> Option<EntryId> {
         let id = self.order.previous(pl)?;
         self.failed.clear();
+        self.order.back_to(pl, id);
         self.load(pl, id)
     }
 

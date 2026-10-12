@@ -70,3 +70,22 @@ fn dropping_the_worker_stops_its_thread() {
     // The thread owned `tx`; once it ends, the channel disconnects.
     assert_eq!(rx.recv_timeout(WAIT), Err(RecvTimeoutError::Disconnected));
 }
+
+#[test]
+fn a_file_that_makes_the_reader_panic_does_not_stop_the_worker() {
+    let id = ids(2);
+    let read = |path: &std::path::Path| -> TagResult {
+        if path.ends_with("bad") {
+            panic!("the tag library choked on this file");
+        }
+        Ok(FileTags::default())
+    };
+    let (tx, rx) = unbounded();
+    let worker = TagWorker::with_reader(read, move |id, r: TagResult| {
+        tx.send((id, r.is_ok())).unwrap()
+    });
+    worker.request(vec![(id[0], PathBuf::from("bad"))]);
+    assert_eq!(rx.recv_timeout(WAIT), Ok((id[0], false)));
+    worker.request(vec![(id[1], PathBuf::from("good"))]);
+    assert_eq!(rx.recv_timeout(WAIT), Ok((id[1], true)));
+}

@@ -21,7 +21,8 @@ pub fn from_args(args: impl IntoIterator<Item = OsString>) -> Vec<Item> {
     for arg in args {
         match arg.to_str().filter(|s| is_url(s)) {
             Some(url) => out.push(Source::Url(url.to_string()).into()),
-            None => expand(PathBuf::from(arg), &mut out),
+            // Absolute, so the autosave finds the file again from any folder.
+            None => expand(std::path::absolute(&arg).unwrap_or(arg.into()), &mut out),
         }
     }
     out

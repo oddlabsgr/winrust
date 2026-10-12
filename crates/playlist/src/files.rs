@@ -9,15 +9,16 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use winrust_audio::Source;
 
-/// Reads a playlist file: `.pls` by its extension, anything else as M3U. Relative paths
-/// resolve against the file's folder. Only I/O fails.
+/// Reads a playlist file: `.pls` by its extension, anything else as M3U. Only `.m3u8` must
+/// be UTF-8; the older formats fall back to Windows-1252, as Winamp 2.x wrote them in the
+/// ANSI code page. Relative paths resolve against the file's folder. Only I/O fails.
 pub fn read(path: &Path) -> io::Result<Vec<Item>> {
     let bytes = std::fs::read(path)?;
     let ext = path
         .extension()
         .map(|e| e.to_string_lossy().to_ascii_lowercase())
         .unwrap_or_default();
-    let text = decode(&bytes, ext == "m3u");
+    let text = decode(&bytes, ext != "m3u8");
     let base = path.parent().unwrap_or(Path::new(""));
     Ok(if ext == "pls" {
         parse_pls(&text, base)
@@ -26,8 +27,8 @@ pub fn read(path: &Path) -> io::Result<Vec<Item>> {
     })
 }
 
-/// A playlist file's text: UTF-8, after any byte-order mark. A `legacy` file (`.m3u`) that
-/// is not valid UTF-8 is Windows-1252; other invalid bytes become U+FFFD.
+/// A playlist file's text: UTF-8, after any byte-order mark. A `legacy` file (`.m3u`,
+/// `.pls`) that is not valid UTF-8 is Windows-1252; other invalid bytes become U+FFFD.
 pub fn decode(bytes: &[u8], legacy: bool) -> String {
     let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
     match std::str::from_utf8(bytes) {

@@ -126,8 +126,8 @@ impl PlayOrder {
     }
 
     /// An entry became current (it was loaded, or started gaplessly). With shuffle it counts
-    /// as played: taken from the part not yet played, or, when it played already, the
-    /// history goes back to it.
+    /// as played: taken from the part not yet played, or, when it played already, moved to
+    /// the end of what played, so the tracks heard after it are not heard again.
     pub fn played(&mut self, pl: &Playlist, id: EntryId) {
         if !self.shuffle {
             return;
@@ -139,12 +139,25 @@ impl PlayOrder {
             return;
         }
         match self.perm.iter().position(|x| *x == id) {
-            Some(i) if i < self.played => self.played = i + 1,
+            Some(i) if i < self.played => self.perm[i..self.played].rotate_left(1),
             Some(i) => {
                 self.perm[self.played..=i].rotate_right(1);
                 self.played += 1;
             }
             None => {}
+        }
+    }
+
+    /// Previous chose this entry: with shuffle, the history goes back to it, and next walks
+    /// forward through it again.
+    pub fn back_to(&mut self, pl: &Playlist, id: EntryId) {
+        if !self.shuffle {
+            return;
+        }
+        self.sync(pl);
+        match self.perm[..self.played].iter().position(|x| *x == id) {
+            Some(i) => self.played = i + 1,
+            None => self.played(pl, id),
         }
     }
 
