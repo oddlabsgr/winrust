@@ -2734,6 +2734,8 @@ dependencies = [
 name = "winrust-playlist"
 version = "0.1.0"
 dependencies = [
+ "tempfile",
+ "url",
  "winrust-audio",
 ]
 

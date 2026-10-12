@@ -4,6 +4,7 @@
 
 pub mod cursor;
 pub mod entry;
+pub mod files;
 pub mod order;
 pub mod playlist;
 pub mod rng;
