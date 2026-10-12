@@ -11,6 +11,7 @@ cargo-fuzz = true
 crossbeam-channel = "0.5.17"
 libfuzzer-sys = "0.4.13"
 winrust-audio = { path = "../crates/audio" }
+winrust-playlist = { path = "../crates/playlist" }
 winrust-skin = { path = "../crates/skin" }
 
 # Not part of the main workspace: cargo-fuzz needs nightly.
@@ -33,6 +34,13 @@ bench = false
 [[bin]]
 name = "icy"
 path = "fuzz_targets/icy.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "playlist_file"
+path = "fuzz_targets/playlist_file.rs"
 test = false
 doc = false
 bench = false

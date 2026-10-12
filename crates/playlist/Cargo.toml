@@ -1,0 +1,16 @@
+[package]
+name = "winrust-playlist"
+description = "Winrust playlist: entries, selection, editing, play order, playlist files, title templates and tags"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+crossbeam-channel = "0.5.17"
+lofty = "0.25.4"
+url = "2.5.8"
+winrust-audio = { path = "../audio" }
+
+[dev-dependencies]
+tempfile = "3"

@@ -9,6 +9,8 @@ on:
       - "fuzz/**"
       - "crates/skin/**"
       - "crates/audio/src/icy.rs"
+      - "crates/playlist/src/files.rs"
+      - "crates/playlist/src/title.rs"
       - ".github/workflows/fuzz.yml"
 
 env:
@@ -21,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [bmp, skin_archive, icy]
+        target: [bmp, skin_archive, icy, playlist_file]
     steps:
       - uses: actions/checkout@v5
       # rust-toolchain.toml pins stable; `cargo +nightly` below overrides it.
