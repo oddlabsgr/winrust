@@ -8,4 +8,5 @@ pub mod files;
 pub mod order;
 pub mod playlist;
 pub mod rng;
+pub mod sources;
 pub mod title;
