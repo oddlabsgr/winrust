@@ -1,0 +1,6 @@
+//! The Winrust playlist: entries, selection and editing, play order, playlist files, title
+//! templates and tags. No windowing or OS API; only reading playlist files, folders and tags
+//! touches the disk.
+
+pub mod entry;
+pub mod playlist;

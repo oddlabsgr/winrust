@@ -2731,6 +2731,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "winrust-playlist"
+version = "0.1.0"
+dependencies = [
+ "winrust-audio",
+]
+
+[[package]]
 name = "winrust-skin"
 version = "0.1.0"
 dependencies = [
