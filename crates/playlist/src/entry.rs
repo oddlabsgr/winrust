@@ -1,5 +1,6 @@
 //! One playlist entry and what is known about it.
 
+use crate::title::Template;
 use std::time::Duration;
 use winrust_audio::Source;
 
@@ -64,5 +65,32 @@ impl Entry {
 
     pub fn id(&self) -> EntryId {
         self.id
+    }
+
+    /// `%filename%`: the file name without its extension; for a stream, the URL.
+    pub fn filename(&self) -> String {
+        match &self.source {
+            Source::File(path) => path
+                .file_stem()
+                .unwrap_or(path.as_os_str())
+                .to_string_lossy()
+                .into_owned(),
+            Source::Url(url) => url.clone(),
+        }
+    }
+
+    /// The title the playlist shows (spec §4.8): the template over the tags, or the file
+    /// name when the tags have no title or the template gives nothing. Before the tags are
+    /// read, the playlist file's title, else the file name.
+    pub fn title(&self, template: &Template) -> String {
+        let name = self.filename();
+        match &self.tags {
+            Some(tags) if tags.title.is_some() => {
+                let title = template.render(tags, &name);
+                if title.trim().is_empty() { name } else { title }
+            }
+            Some(_) => name,
+            None => self.hint.clone().unwrap_or(name),
+        }
     }
 }

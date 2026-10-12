@@ -4,3 +4,4 @@
 
 pub mod entry;
 pub mod playlist;
+pub mod title;
